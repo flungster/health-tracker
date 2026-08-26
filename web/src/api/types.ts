@@ -99,7 +99,7 @@ export type ActivityDetailView = {
   heart_rate_avg_bpm: number | null;
   heart_rate_max_bpm: number | null;
   cadence_avg_rpm: number | null;
-  source_format: string;
+  source_format: string | null;
   original_filename: string | null;
   created_at: string;
   splits: SplitView[];

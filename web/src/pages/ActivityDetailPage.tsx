@@ -206,10 +206,12 @@ export default function ActivityDetailPage() {
         activity.strength === null &&
         activity.sport_type !== "strength" && <GenericDetail sportType={activity.sport_type} />}
 
-      <p className="text-xs text-ink-faint">
-        Imported from {capitalize(activity.source_format)}
-        {activity.original_filename !== null && <> · {activity.original_filename}</>}
-      </p>
+      {activity.source_format !== null && (
+        <p className="text-xs text-ink-faint">
+          Imported from {capitalize(activity.source_format)}
+          {activity.original_filename !== null && <> · {activity.original_filename}</>}
+        </p>
+      )}
     </div>
   );
 }

@@ -26,12 +26,14 @@ from app.imports import (
     ParsedActivity,
 )
 from app.models.activity import Activity
+from app.providers import Provider
 from app.schemas.mappers.activity_mapper import ActivityMapper
 from app.services.activity_stats import ActivityStatistics, ActivityStats
 
 logger = logging.getLogger(__name__)
 
 _MAX_EXTENSIONS = {".gpx", ".tcx", ".fit"}
+PROVIDER_VALUES: tuple[str, ...] = tuple(member.value for member in Provider)
 
 
 class ImportService:
@@ -108,6 +110,60 @@ class ImportService:
         for warning in parsed.warnings:
             logger.info("Import warning for %s: %s", filename, warning)
 
+        activity_id = uuid4()
+        file_path = self._store_file(user_id, activity_id, filename, data, parser.source_format)
+
+        return self.import_parsed(
+            user_id,
+            parsed,
+            activity_uuid=activity_id,
+            source_format=parser.source_format,
+            original_filename=filename,
+            file_path=file_path,
+            name_override=name_override,
+            sport_override=sport_override,
+        )
+
+    def import_parsed(
+        self,
+        user_id: UUID,
+        parsed: ParsedActivity,
+        *,
+        activity_uuid: UUID | None = None,
+        source_format: str | None = None,
+        provider: str | None = None,
+        external_activity_id: str | None = None,
+        original_filename: str | None = None,
+        file_path: str | None = None,
+        name_override: str | None = None,
+        sport_override: str | None = None,
+    ) -> Activity:
+        """Persist a parsed activity for a user. Commits on success.
+
+        Shared by file import (``import_activity``) and provider sync: the
+        caller supplies the provenance — a file/export ``source_format`` for
+        uploads, or a ``provider`` with its ``external_activity_id`` for
+        activities fetched from a provider API.
+
+        Raises ValidationError for a bad sport override or provider, and
+        ActivityImportError when the activity carries no timestamp data.
+        """
+        if sport_override is not None and sport_override not in SPORT_TYPES:
+            raise ValidationError(
+                f"Unknown sport type {sport_override!r}. Expected one of: {', '.join(SPORT_TYPES)}."
+            )
+        if provider is not None and provider not in PROVIDER_VALUES:
+            raise ValidationError(
+                f"Unknown provider {provider!r}. Expected one of: {', '.join(PROVIDER_VALUES)}."
+            )
+        if parsed.started_at is None:
+            raise ActivityImportError("The activity contains no timestamp data; cannot import it.")
+        for warning in parsed.warnings:
+            if original_filename is not None:
+                logger.info("Import warning for %s: %s", original_filename, warning)
+            else:
+                logger.info("Import warning: %s", warning)
+
         started_at = parsed.started_at
         duration = parsed.duration_seconds
         if duration is None and parsed.ended_at is not None:
@@ -117,7 +173,7 @@ class ImportService:
         ended_at = parsed.ended_at or (started_at + timedelta(seconds=duration))
 
         sport = self._resolve_sport(sport_override, parsed)
-        name = (name_override or parsed.name or Path(filename).stem).strip()
+        name = (name_override or parsed.name or self._name_fallback(original_filename)).strip()
         if not name:
             name = "Imported activity"
 
@@ -125,11 +181,11 @@ class ImportService:
         max_heart_rate = profile.max_heart_rate if profile is not None else None
         stats = self._statistics.compute(parsed, max_heart_rate=max_heart_rate)
 
-        activity_id = uuid4()
-        file_path = self._store_file(user_id, activity_id, filename, data, parser.source_format)
+        if activity_uuid is None:
+            activity_uuid = uuid4()
 
         activity = ActivityMapper.create_activity(
-            activity_uuid=activity_id,
+            activity_uuid=activity_uuid,
             user_id=user_id,
             sport_type=sport,
             name=name,
@@ -145,17 +201,19 @@ class ImportService:
             heart_rate_avg_bpm=stats.heart_rate_avg_bpm,
             heart_rate_max_bpm=stats.heart_rate_max_bpm,
             cadence_avg_rpm=stats.cadence_avg_rpm,
-            source_format=parser.source_format,
-            original_filename=filename,
+            source_format=source_format,
+            provider=provider,
+            external_activity_id=external_activity_id,
+            original_filename=original_filename,
             file_path=file_path,
         )
         self._activity_dao.add(activity)
         self._trackpoint_dao.add_all(
-            ActivityMapper.create_trackpoints(activity_id, parsed.trackpoints)
+            ActivityMapper.create_trackpoints(activity_uuid, parsed.trackpoints)
         )
-        self._split_dao.add_all(ActivityMapper.create_splits(activity_id, stats.splits))
+        self._split_dao.add_all(ActivityMapper.create_splits(activity_uuid, stats.splits))
         if stats.hr_zones is not None:
-            self._hr_zone_dao.add(ActivityMapper.create_hr_zones(activity_id, stats.hr_zones))
+            self._hr_zone_dao.add(ActivityMapper.create_hr_zones(activity_uuid, stats.hr_zones))
         self._add_sport_row(activity, sport, stats)
 
         self._unit_of_work.commit()
@@ -167,6 +225,13 @@ class ImportService:
             len(parsed.trackpoints),
         )
         return activity
+
+    @staticmethod
+    def _name_fallback(original_filename: str | None) -> str:
+        """Display-name fallback: the file stem for uploads, a generic label otherwise."""
+        if original_filename is not None and Path(original_filename).stem:
+            return Path(original_filename).stem
+        return "Imported activity"
 
     def _resolve_sport(self, override: str | None, parsed: ParsedActivity) -> str:
         if override:

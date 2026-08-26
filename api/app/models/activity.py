@@ -37,7 +37,11 @@ class Activity(IntIdUuidModel, TimestampMixin):
     heart_rate_avg_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     heart_rate_max_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cadence_avg_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    source_format: Mapped[str] = mapped_column(Text, nullable=False)
+    source_format: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # FK to providers.value lives in the migration SQL (reference tables
+    # have no ORM model), mirroring sport_type/source_format.
+    provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_activity_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     original_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 

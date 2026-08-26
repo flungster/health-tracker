@@ -110,7 +110,7 @@ class ActivityDetailView(BaseModel):
     heart_rate_avg_bpm: int | None
     heart_rate_max_bpm: int | None
     cadence_avg_rpm: int | None
-    source_format: str
+    source_format: str | None
     original_filename: str | None
     created_at: datetime
     splits: list[SplitView]

@@ -7,6 +7,7 @@ from app.models.activity_trackpoint import ActivityTrackpoint
 from app.models.activity_type import ActivityType
 from app.models.base import IntIdModel, IntIdUuidModel
 from app.models.cycling_activity import CyclingActivity
+from app.models.provider_account import ProviderAccount
 from app.models.rowing_activity import RowingActivity
 from app.models.running_activity import RunningActivity
 from app.models.sport_activity import SportActivityMixin
@@ -19,6 +20,7 @@ __all__ = [
     "ActivitySplit",
     "ActivityTrackpoint",
     "ActivityType",
+    "ProviderAccount",
     "CyclingActivity",
     "RunningActivity",
     "RowingActivity",

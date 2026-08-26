@@ -62,6 +62,17 @@ class RateLimitExceededError(AppError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class ProviderUpstreamError(AppError):
+    """A provider's API failed or rejected the request (HTTP 502).
+
+    Raised by provider adapters for network failures, provider-side errors,
+    and invalid or revoked credentials.
+    """
+
+    status_code = 502
+    code = "PROVIDER_ERROR"
+
+
 class ActivityImportError(AppError):
     """An uploaded activity file could not be read (HTTP 422).
 

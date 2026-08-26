@@ -6,10 +6,14 @@ Guidance for AI agents (and humans) working in this repository.
 
 Open-source, self-hosted activity and health tracker for the homelab — a
 **local-first health/fitness aggregation platform where the data is yours**.
-Docker-deployable. **No cloud or third-party service dependencies at runtime.**
+Docker-deployable. **No cloud or third-party service dependencies at runtime**:
+the app is fully functional offline, and fetching from a connected provider
+(e.g. Strava) is strictly opt-in — the user connects their own account via
+OAuth and the API pulls their own activities (read-only); nothing is ever
+pushed to a third party.
 Users create an account, import activity files (GPX/TCX/FIT, later Apple Health
-export), and view activities — routes, splits, heart rate, calories — in a clean
-web UI on port 9090.
+export) or sync a connected provider, and view activities — routes, splits,
+heart rate, calories — in a clean web UI on port 9090.
 
 ## Repository layout
 
@@ -25,6 +29,8 @@ health-tracker/
       models/        SQLAlchemy 2.0 typed ORM models (Base, mixins)
       schemas/       pydantic v2: requests/, views/, mappers/
       imports/       file format parsers (pure: bytes -> ParsedActivity)
+      providers/     third-party adapters (ProviderAdapter base + registry;
+                     one subpackage per provider, e.g. strava/)
       security/      argon2 password hashing, JWT issuing/verifying
       errors/        AppError hierarchy + exception handlers
       db/            engine + session factory
@@ -97,6 +103,25 @@ invocations in docs instead.
 - Apple Health (zip of encrypted JSON records) is a stretch goal; add
   `apple_health/` parser package when implemented.
 - Every parser needs fixture tests, including at least one malformed/corrupt file.
+
+## Provider rules (third-party integrations)
+
+- `app/providers/` holds the provider-agnostic core: the `ProviderAdapter`
+  abstract base, the `ProviderRegistry`, and shared dataclasses. One subpackage
+  per provider (`app/providers/strava/`, later `garmin/`, ...) holds that
+  provider's adapter + API client. Adding a provider = adding an adapter, not
+  new core code.
+- Adapters are **stateless per user**: per-user state (OAuth tokens, sync
+  cursor) lives in `provider_accounts` and is passed in per call. Adapters only
+  ever fetch the connected user's **own** activities — never other people's.
+- Both import sources (uploaded files, provider fetches) flow through the same
+  `ImportService.import_parsed` path and land as ordinary `activities` rows.
+  Provenance is a column, not a table: `source_format` (file/export format,
+  nullable) vs `provider` + `external_activity_id` (nullable, deduped by a
+  partial unique index). A provider activity is imported at most once.
+- OAuth tokens are stored in `provider_accounts` and **never** returned by any
+  API or logged. The public API speaks the provider value string (e.g.
+  `strava`), mirroring the `providers` reference table + `Provider` enum.
 
 ## Database rules (dbmate v2 + Postgres 16)
 

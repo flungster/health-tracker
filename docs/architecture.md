@@ -8,16 +8,17 @@ that keep the codebase maintainable. The authoritative rules live in
 ## Components
 
 ```
-            ┌────────────┐  static bundle + /api proxy
+             ┌────────────┐  static bundle + /api proxy
  browser ──▶│    web     │──────────────────────────────┐
-            │ (nginx +   │                              ▼
-            │  React SPA)│                        ┌────────────┐   SQL    ┌──────────┐
-            └────────────┘                        │    api     │─────────▶│  db      │
-                                                  │  (FastAPI) │          │ Postgres │
-                                                  └─────┬──────┘          └──────────┘
-                                                        │ writes original files
-                                                        ▼
-                                                 /data/uploads (volume)
+             │ (nginx +   │                              ▼
+             │  React SPA)│                        ┌────────────┐   SQL    ┌──────────┐
+             └────────────┘                        │    api     │─────────▶│  db      │
+                                                   │  (FastAPI) │          │ Postgres │
+                                                   └──┬───┬─────┘          └──────────┘
+                                                      │   └── outbound HTTPS, user-authorized
+                                                      │       (connected providers, e.g. Strava)
+                                                      ▼ writes original files
+                                               /data/uploads (volume)
 ```
 
 | Service | Image / tech | Responsibility |
@@ -68,10 +69,27 @@ bytes in, a format-neutral `ParsedActivity` dataclass out. A `FormatDetector`
 picks the parser (FIT magic bytes first, then file extension). See
 [import-formats.md](import-formats.md).
 
+### Providers
+
+`providers/` is the provider-agnostic half of the third-party integration
+layer. A `ProviderAdapter` (abstract base, one concrete adapter per provider
+under `providers/<name>/`) turns one external provider into the app's core
+concepts: OAuth credentials, the connected user's **own** identity, and their
+activities as `ParsedActivity` objects. Adapters are stateless per user —
+user-specific state (tokens, sync cursor) lives in `provider_accounts` and is
+passed in per call. The core (the `ProviderRegistry`, the provider accounts
+DAO, and the shared `ImportService.import_parsed` persistence path) talks to
+adapters through this contract only, so adding a provider means adding an
+adapter, not new core code. Both import sources (uploaded files and
+provider-fetched activities) flow through the same `import_parsed` path and
+land as ordinary `activities` rows, distinguished by their provenance
+(`source_format` for files, `provider` + `external_activity_id` for fetched).
+
 ### Errors
 
 Services/DAOs raise `AppError` subclasses (`AuthenticationError`,
-`NotFoundError`, `ConflictError`, `ValidationError`, `ActivityImportError`).
+`NotFoundError`, `ConflictError`, `ValidationError`, `ActivityImportError`,
+`ProviderUpstreamError`).
 Global handlers convert them to a structured JSON envelope:
 
 ```json
@@ -106,15 +124,16 @@ OpenStreetMap tiles — the only outbound request the browser makes.
 - **Soft delete everywhere** — nothing is hard-deleted from the database by the
   app; `deleted_at` marks removal and reads filter on it.
 - **Precomputed at import** — splits, heart-rate zones, and sport metrics are
-  derived once, at import time, and stored. Reads are cheap and the UI doesn't
-  recompute. Relabeling an activity's sport (PATCH) does not recompute.
+  derived once, at import time (file upload or provider sync), and stored.
+  Reads are cheap and the UI doesn't recompute. Relabeling an activity's
+  sport (PATCH) does not recompute.
 - **Reference tables for enum-like values** — value sets that are enums in
   code are seeded reference tables keyed by the value itself
-  (`activity_types`, `source_formats`, `split_units`), referenced by foreign
-  key from the tables that store them; membership is enforced by the schema.
-  Code mirrors each set as a Python `Enum` (`SportType`, `SourceFormat`,
-  `SplitUnit`) and validates against it before the FK does; the API speaks
-  the value string, never a row id.
+  (`activity_types`, `source_formats`, `split_units`, `providers`), referenced
+  by foreign key from the tables that store them; membership is enforced by
+  the schema. Code mirrors each set as a Python `Enum` (`SportType`,
+  `SourceFormat`, `SplitUnit`, `Provider`) and validates against it before the
+  FK does; the API speaks the value string, never a row id.
 - **Original files kept** — the uploaded file is stored in the `uploads`
   volume at `/data/uploads/<user_id>/<activity_id>.<ext>` for re-import/export.
 - **User scoping is a invariant** — every read is scoped by `user_id` in the
@@ -128,4 +147,10 @@ OpenStreetMap tiles — the only outbound request the browser makes.
 - **Versioned releases** — the version lives in `VERSION` (mirrored in
   `api/pyproject.toml`, kept in sync by CI) and is reported by
   `GET /health`; releases are git tags, see [Releasing](release.md).
-- **No cloud** — no telemetry, no external APIs. Everything runs locally.
+- **No cloud by default** — no telemetry and no required external services;
+  everything runs locally and the app is fully functional offline. Fetching
+  activities from a connected provider (e.g. Strava) is strictly opt-in: the
+  user connects their **own** account via OAuth, the API then makes outbound
+  HTTPS calls to that provider on the user's behalf (read-only, their own
+  activities), and nothing is ever *pushed* to a third party. The data is the
+  user's and stays in their database.

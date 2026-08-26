@@ -19,6 +19,7 @@ to Done in the overview.
 | M7 | Reference table: sport types (`activity_types` + FK) | Done | 2026-08-25 |
 | M8 | Reference tables: `source_formats` + `split_units` | Done | 2026-08-25 |
 | M9 | Identifier convention: int `id` PK + public `uuid` column | Done | 2026-08-26 |
+| M10a | Provider foundation: `providers` + `provider_accounts`, adapter contract, shared `import_parsed` | Done | 2026-08-26 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -27,6 +28,62 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M10a — Provider foundation: schema, adapter contract, shared import path (2026-08-26)
+
+First step of the M10 Strava integration, built **provider-agnostic** so
+later providers (Garmin, Polar, ...) are adapters, not rewrites. This
+milestone lands the data model, the code-side contracts, and the shared
+persistence path — with **no Strava-specific code, no routes, and no UI**
+yet (those are M10b–M10d).
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(94 tests: 78 pre-existing + 16 new provider tests) · migration verified
+up/down/up on a fresh database · live stack migrated in place, rebuilt,
+smoke passed · pre-existing rows verified intact.
+
+- Migration `20260826000001_providers.sql`: new `providers` reference table
+  (seeded `strava`) and `provider_accounts` (one of a user's **own**
+  connected third-party profiles: external identity, OAuth credentials,
+  `token_expires_at`, `scope`, `last_sync_at`, opaque `sync_cursor`;
+  `UNIQUE (user_id, provider)`, `user_id` FK → `users (uuid)` ON DELETE
+  CASCADE). `activities` gains nullable `provider` (FK → `providers.value`)
+  and `external_activity_id`, plus a **partial unique index** on
+  `(provider, external_activity_id) WHERE both NOT NULL` so a provider
+  activity imports at most once (NULL provenance never collides).
+  `activities.source_format` becomes nullable — it now describes the
+  file/export format only, not "where it came from".
+- Provenance model (key decision): where an activity came from is a
+  **column, not a table** — `source_format` for files, `provider` +
+  `external_activity_id` for fetched rows. Both sources land as ordinary
+  `activities` rows through one shared code path.
+- New `app/providers/` core: `ProviderAdapter` abstract base (authorize
+  URL, code exchange, refresh, identity, paged activity ids, full-activity
+  fetch → `ParsedActivity`, revoke) + `ProviderRegistry` (value → adapter)
+  + shared dataclasses (`ProviderCredentials`, `ProviderIdentity`,
+  `ActivityIdPage`). Adapters are stateless per user and only ever fetch the
+  connected user's own activities. `Provider` StrEnum mirrors the seeded
+  reference rows (no `Provider` ORM model — reference tables have no models,
+  so the FK lives in the migration SQL only, like `sport_type`).
+- `ImportService.import_parsed()` extracted as the shared persistence path:
+  `import_activity` (file upload) now detects → parses → stores the file →
+  calls `import_parsed`; provider sync (M10d) will call `import_parsed`
+  directly with `provider`/`external_activity_id`. It validates the
+  `provider` against the `Provider` enum before the FK backstop.
+- `Activity` model + mapper + `ActivityDetailView.source_format` now
+  nullable; web `ActivityDetailView` type widened to `string | null` and the
+  detail page hides the "Imported from …" line when there is no file format.
+- `ProviderUpstreamError` (502 `PROVIDER_ERROR`) added to the `AppError`
+  hierarchy for adapter network/provider failures.
+- Tests (`tests/test_providers.py`): seed↔enum match; `ProviderAccountDao`
+  add/get/soft-delete/noop/cascade + `UNIQUE (user_id, provider)`; provenance
+  stored for both file and provider paths; NULL-provenance rows don't
+  collide; duplicate `(provider, external_activity_id)` rejected; unknown
+  provider rejected; timestamp-less activity rejected; registry
+  register/get/available + unknown + duplicate.
+- Docs: `AGENTS.md` (Provider rules, layout, project scope), `data-model.md`
+  (tables, conventions, relationship overview, migrations), `architecture.md`
+  (Providers section, errors, "no cloud by default").
 
 ## M9 — Identifier convention: int `id` PK + public `uuid` column (2026-08-26)
 

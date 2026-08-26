@@ -2,8 +2,7 @@
 
 The schema is owned entirely by dbmate migrations in `db/migrations/`. The API
 never alters the schema. This document describes the current model (as of the
-`20260825000004_source_formats_split_units` migration) and the conventions it
-follows.
+`20260826000001_providers` migration) and the conventions it follows.
 
 ## Conventions
 
@@ -34,9 +33,12 @@ follows.
   `description` for display (e.g. `activity_types`), and tables storing such
   a value carry a **foreign key** to it, so membership is enforced by the
   schema. Reference rows are seeded by migration and treated as immutable
-  (no `updated_at`/`deleted_at`; new values are added by migration). In code
-  the same set is mirrored as a Python `Enum`; the API keeps using the value
-  string, not a row id.
+   (no `updated_at`/`deleted_at`; new values are added by migration). In code
+   the same set is mirrored as a Python `Enum`; the API keeps using the value
+   string, not a row id. Reference tables have **no ORM model**: the FK from a
+   model column to a reference table (e.g. `activities.sport_type` →
+   `activity_types.value`) is declared in the migration SQL only, so the ORM
+   never has to resolve a table that has no mapped class.
 - **Standard SQL** — the schema avoids Postgres-specific types (e.g. the
   Postgres `ENUM` type) so it stays portable and the migrations stay simple.
 
@@ -44,6 +46,8 @@ follows.
 
 ```
 users 1───┬───1 user_profiles
+          │
+          ├───* provider_accounts ──> providers (reference)
           │
           └───* activities 1───┬───* activity_trackpoints
                                ├───1 activity_hr_zones
@@ -55,12 +59,13 @@ users 1───┬───1 user_profiles
                                │   └───* strength_exercise_sets
                                ├───* activity_splits ──> split_units (reference)
                                ├───> activity_types (reference)
-                               └───> source_formats (reference)
+                               ├───> source_formats (reference, NULL)
+                               └───> providers (reference, NULL)
 ```
 
-`users` cascades to `activities`; `activities` cascades to all of its
-sub-resources. Deleting a user removes their activities and everything under
-them (soft delete at each level).
+`users` cascades to `activities` and to `provider_accounts`; `activities`
+cascades to all of its sub-resources. Deleting a user removes their
+activities, everything under them, and their provider connections.
 
 ## Tables
 
@@ -93,8 +98,9 @@ heart-rate zone computation.
 
 ### `activities`
 
-Imported sport activities — the core table. Holds every metric that applies to
-most sports; sport-specific metrics live in the 1:1 `<sport>_activity` tables.
+Sport activities (imported from files or fetched from a provider) — the core
+table. Holds every metric that applies to most sports; sport-specific metrics
+live in the 1:1 `<sport>_activity` tables.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -111,13 +117,18 @@ most sports; sport-specific metrics live in the 1:1 `<sport>_activity` tables.
 | `calories_kcal` | `double` NULL | From the file when available. |
 | `elevation_gain_m` | `double` NULL | Cumulative positive gain. |
 | `heart_rate_min/avg/max_bpm` | `int` NULL | Each `> 0` when set. |
-| `cadence_avg_rpm` | `int` NULL | `> 0` when set. |
-| `source_format` | `text` FK → source_formats.value | `gpx` / `tcx` / `fit` / `apple_health`. |
-| `original_filename` | `text` NULL | As uploaded (for display). |
-| `file_path` | `text` NULL | Storage path of the original file in the uploads volume. |
-| audit | | |
+ | `cadence_avg_rpm` | `int` NULL | `> 0` when set. |
+ | `source_format` | `text` NULL FK → source_formats.value | File/export format (`gpx` / `tcx` / `fit` / `apple_health`); NULL when fetched from a provider API. |
+ | `provider` | `text` NULL FK → providers.value | Provider the activity was fetched from; NULL for file imports. |
+ | `external_activity_id` | `text` NULL | The activity's id on the provider, for dedup; NULL for file imports. |
+ | `original_filename` | `text` NULL | As uploaded (for display). |
+ | `file_path` | `text` NULL | Storage path of the original file in the uploads volume. |
+ | audit | | |
 
-Indexes: `(user_id, started_at DESC)` for the feed, `(user_id, sport_type)`.
+Indexes: `(user_id, started_at DESC)` for the feed, `(user_id, sport_type)`,
+and a partial unique index on `(provider, external_activity_id)` where both
+are non-NULL — a provider activity is imported at most once (NULL provenance
+never collides, so file imports are unaffected).
 
 ### `activity_types`
 
@@ -154,6 +165,44 @@ migration, immutable.
 | `value` | `text` PK | `km`, `mi`. |
 | `description` | `text` | Display label (e.g. `Kilometres`). |
 | `created_at` | `timestamptz` | Only audit column. |
+
+### `providers`
+
+Reference table of external data providers (e.g. Strava) whose activities
+can be fetched into the account. Seeded by migration, immutable (same
+convention as `activity_types`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | Provider code and the public API value (e.g. `strava`). |
+| `description` | `text` | Human-readable label for the UI (e.g. `Strava`). |
+| `created_at` | `timestamptz` | Only audit column. |
+
+Seeded rows: `strava`.
+
+### `provider_accounts`
+
+One of a local user's connected third-party profiles: the user's **own**
+external identity, the OAuth credentials used to fetch their activities, and
+the sync state — one row per (user, provider). Never another person's
+profile, and never exposed through the API (tokens included).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigint` PK (identity) | Internal primary key. |
+| `user_id` | `uuid` FK → users (uuid) | Owning local account; unique per provider. |
+| `provider` | `text` FK → providers.value | The connected provider (e.g. `strava`). |
+| `external_user_id` | `text` | The user's own identity on the provider (e.g. Strava athlete id), as a string. |
+| `display_name` | `text` NULL | Display name of the external profile, for the UI. |
+| `refresh_token` | `text` | Long-lived OAuth refresh token (it rotates on refresh; the latest is stored). Never exposed. |
+| `access_token` | `text` | Cached short-lived OAuth access token. Never exposed. |
+| `token_expires_at` | `timestamptz` | Expiry of the cached access token (UTC). |
+| `scope` | `text` | Space-delimited list of the scopes the user granted. |
+| `last_sync_at` | `timestamptz` NULL | When the last activity sync completed. |
+| `sync_cursor` | `text` NULL | Provider-specific opaque pagination resume point. |
+| audit | | |
+
+Constraint: `UNIQUE (user_id, provider)` — one connection per provider.
 
 ### `activity_trackpoints`
 
@@ -250,6 +299,7 @@ time of writing.)
 | `20260825000003_activity_types.sql` | `activity_types` reference table (seeded); `activities.sport_type` becomes an FK to it (replacing the `CHECK`). |
 | `20260825000004_source_formats_split_units.sql` | `source_formats` + `split_units` reference tables (seeded); `activities.source_format` and `activity_splits.split_type` become FKs (replacing the `CHECK`s). |
 | `20260825000005_int_ids_and_public_uuids.sql` | Identifier convention: `users`/`activities` gain an int `id` PK (old PK-uuid column renamed to `uuid`, kept unique); the 1:1 satellite tables (`user_profiles`, `activity_hr_zones`, the four `<sport>_activity`) switch from a uuid PK to an int `id` PK with the uuid FK kept as a unique column; `strength_exercise_sets` gains the public `uuid`. All incoming FKs are re-pointed at the uuid columns. |
+| `20260826000001_providers.sql` | Provider infrastructure: `providers` reference table (seeded with `strava`) + `provider_accounts` (one of a user's own connected third-party profiles: external identity, OAuth credentials, sync state). `activities` gains nullable `provider` + `external_activity_id` (FK + partial unique index for dedup); `activities.source_format` becomes nullable so it describes the file/export format only. |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.
