@@ -19,6 +19,9 @@ to Done in the overview.
 | M7 | Reference table: sport types (`activity_types` + FK) | Done | 2026-08-25 |
 | M8 | Reference tables: `source_formats` + `split_units` | Done | 2026-08-25 |
 
+> 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
+> deployed stack reports it at `GET /api/v1/health`.
+
 > 2026-08-25 — Refactor + compliance batch (pre-M6): removed all third-party
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
