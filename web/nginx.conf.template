@@ -1,0 +1,37 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Resolve the api service at request time via Docker's built-in DNS so
+    # nginx does not fail to start when the api container is (re)starting
+    # and picks up the api's new IP after a container restart.
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    # Proxy API requests to the api service (same origin: no CORS needed).
+    location /api/ {
+        set $api_upstream http://api:8000;
+        proxy_pass $api_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Backstop for the API's own MAX_UPLOAD_MB limit (built from the same
+        # value). The API returns the detailed error for real uploads.
+        client_max_body_size __MAX_UPLOAD_MB__m;
+        error_page 413 = @api_upload_too_large;
+    }
+
+    # nginx's own 413 is an HTML page; hand clients the API's JSON envelope
+    # instead so the web UI shows a clean error.
+    location @api_upload_too_large {
+        default_type application/json;
+        return 413 '{"error": {"code": "UPLOAD_TOO_LARGE", "message": "The uploaded file is too large.", "details": []}}';
+    }
+
+    # SPA fallback: unknown paths serve the app shell.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

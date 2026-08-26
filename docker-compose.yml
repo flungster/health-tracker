@@ -1,0 +1,81 @@
+name: health-tracker
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-healthtracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-healthtracker}
+      POSTGRES_DB: ${POSTGRES_DB:-health_tracker}
+    ports:
+      # Localhost only, for development tooling (psql, local pytest).
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-healthtracker} -d ${POSTGRES_DB:-health_tracker}
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # One-shot schema migration service. Run with:
+  #   docker compose run --rm migrate            # apply (up)
+  #   docker compose run --rm migrate down 1     # roll back one revision
+  #   docker compose run --rm migrate status     # show migration status
+  #
+  # dbmate writes db/schema.sql (a full schema dump) into the host ./db dir.
+  migrate:
+    # Pinned to the version the migrations are developed and tested against.
+    image: ghcr.io/amacneil/dbmate:2.35.0
+    environment:
+      # sslmode=disable: the compose Postgres has TLS turned off.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthtracker}:${POSTGRES_PASSWORD:-healthtracker}@db:5432/${POSTGRES_DB:-health_tracker}?sslmode=disable
+      DBMATE_SCHEMA_FILE: /db/schema.sql
+    volumes:
+      - ./db:/db
+    entrypoint: ["dbmate", "--migrations-dir=/db/migrations", "--wait"]
+    command: ["up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-healthtracker}:${POSTGRES_PASSWORD:-healthtracker}@db:5432/${POSTGRES_DB:-health_tracker}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_TOKEN_TTL_DAYS: ${JWT_TOKEN_TTL_DAYS:-30}
+      UPLOADS_DIR: /data/uploads
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      MAX_TRACKPOINTS: ${MAX_TRACKPOINTS:-100000}
+      LOGIN_RATE_LIMIT_PER_MINUTE: ${LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+      REGISTER_RATE_LIMIT_PER_MINUTE: ${REGISTER_RATE_LIMIT_PER_MINUTE:-5}
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      # Localhost only; the public surface is the web service on :9090.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./web
+      args:
+        MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-9090}:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads:

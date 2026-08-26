@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (api + web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install API dependencies
+        run: uv sync --directory api
+      - name: Ruff
+        run: |
+          uv run --directory api ruff check .
+          uv run --directory api ruff format --check .
+      - name: Mypy
+        run: uv run --directory api mypy app
+      - name: Version files agree
+        run: |
+          python3 - <<'EOF'
+          import tomllib
+          api_version = tomllib.load(open("api/pyproject.toml", "rb"))["project"]["version"]
+          release_version = open("VERSION").read().strip()
+          assert api_version == release_version, (
+              f"VERSION ({release_version}) must match api/pyproject.toml ({api_version})"
+          )
+          EOF
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci --prefix web
+      - name: tsc + eslint
+        run: |
+          npm run typecheck --prefix web
+          npm run lint --prefix web
+
+  test:
+    name: API tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Start the compose database
+        run: docker compose up -d --wait db
+      - name: Run pytest
+        run: uv run --directory api pytest
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --remove-orphans
+
+  build:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all images
+        run: docker compose build
+
+  e2e:
+    name: End-to-end smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the full stack
+        run: make up
+      - name: Smoke test (health, auth, import, feed)
+        run: scripts/e2e-smoke.sh
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --remove-orphans

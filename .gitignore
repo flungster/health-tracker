@@ -1,0 +1,42 @@
+# --- Python / API ---------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# --- Node / Web -----------------------------------------------------------
+node_modules/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- Environment / secrets ------------------------------------------------
+# Ignore all env files and local overrides, but keep the checked-in example.
+.env
+.env.*
+!.env.example
+
+# --- Generated database artifacts -----------------------------------------
+# dbmate rewrites this full schema dump on every migration run, so it is a
+# build artifact (the schema is documented in docs/data-model.md). The
+# hand-written migrations in db/migrations/ stay tracked.
+db/schema.sql
+
+# --- Local data / logs ----------------------------------------------------
+data/
+uploads/
+backups/
+*.sqlite3
+*.log
+
+# --- OS / editors ---------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/*
+ * Palette: neutral stone tones with a single calm teal accent.
+ */
+@theme {
+  --color-canvas: #f5f4f1;
+  --color-surface: #ffffff;
+  --color-ink: #292826;
+  --color-ink-muted: #6f6d68;
+  --color-ink-faint: #9b988f;
+  --color-line: #e3e1dc;
+  --color-accent: #2f6f6a;
+  --color-accent-dark: #265a56;
+  --color-accent-soft: #e4efee;
+  --color-danger: #a0341f;
+  --color-warn: #a06a1f;
+}
+
+body {
+  @apply bg-canvas text-ink antialiased;
+}
