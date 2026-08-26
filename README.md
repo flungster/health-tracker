@@ -12,6 +12,33 @@ clean web UI. No cloud services involved.
 > `docs/` for detailed documentation and `AGENTS.md` for architecture rules
 > and the milestone plan.
 
+## Built with AI
+
+health-tracker was written almost entirely by AI: a human sets the direction,
+and an agentic coding loop writes and verifies the code, tests, migrations,
+and documentation. It is deliberately an experiment in how far a fully
+**local, open-source model** stack — no cloud inference — can take a real,
+working project.
+
+**Current toolchain (2026-08-25):**
+
+| | |
+|---|---|
+| Agent | [opencode](https://opencode.ai) — interactive agentic CLI |
+| Model | Qwen3.8-27B (MLX 6-bit) — open source, running locally on Apple Silicon via [LM Studio](https://lmstudio.ai) |
+
+No commercial models (OpenAI, Anthropic, …) have been used so far. If that
+ever changes, it is recorded in the log below rather than noted silently.
+
+### AI development log
+
+Add a row whenever the agent or model changes.
+
+| Date | Work | Agent | Model |
+|---|---|---|---|
+| 2026-08-23 – 25 | M0–M6: plan, scaffold, auth, import, web UI, Docker, hardening | opencode | local open-source models via LM Studio (per-session model not recorded at the time) |
+| 2026-08-25 | M7–M8: reference tables for enum-like values | opencode | Qwen3.8-27B (MLX 6-bit) via LM Studio |
+
 ## Documentation
 
 | Doc | What it covers |
