@@ -3,13 +3,17 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdDao
 from app.models.activity_trackpoint import ActivityTrackpoint
 
 
-class ActivityTrackpointDao(BaseDao[ActivityTrackpoint]):
+class ActivityTrackpointDao(IntIdDao[ActivityTrackpoint]):
     """Bulk reads/writes of the ``activity_trackpoints`` table."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, ActivityTrackpoint)
 
     def add_all(self, trackpoints: list[ActivityTrackpoint]) -> None:
         """Insert a batch of trackpoints. The caller commits the session."""

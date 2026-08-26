@@ -7,11 +7,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class SportActivityMixin:
-    """Primary-key/foreign-key column linking a sport row to its activity.
+    """Foreign-key column linking a sport row to its activity.
 
-    Every sport metric table has exactly one row per activity.
+    Every sport metric table has exactly one row per activity. Concrete
+    models also inherit ``IntIdModel`` for the int ``id`` primary key;
+    ``activity_id`` is the unique public-uuid link.
     """
 
     activity_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True
+        Uuid, ForeignKey("activities.uuid", ondelete="CASCADE"), nullable=False, unique=True
     )

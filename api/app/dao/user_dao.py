@@ -3,16 +3,20 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdUuidDao
 from app.models.user import User
 
 
-class UserDao(BaseDao[User]):
+class UserDao(IntIdUuidDao[User]):
     """Reads and writes of the ``users`` table.
 
     All lookups exclude soft-deleted accounts (``deleted_at IS NOT NULL``).
     """
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, User)
 
     def add(self, user: User) -> User:
         """Persist a new user. The caller commits the session."""
@@ -20,9 +24,9 @@ class UserDao(BaseDao[User]):
         self.session.flush()
         return user
 
-    def get_by_id(self, user_id: UUID) -> User | None:
-        """Fetch an active account by id, or None."""
-        statement = select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    def get_by_uuid(self, user_uuid: UUID) -> User | None:
+        """Fetch an active account by its public uuid, or None."""
+        statement = select(User).where(User.uuid == user_uuid, User.deleted_at.is_(None))
         return self.session.scalars(statement).unique().first()
 
     def get_by_email(self, email: str) -> User | None:

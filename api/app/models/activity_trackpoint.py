@@ -6,10 +6,10 @@ from uuid import UUID
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
+from app.models.base import IntIdModel
 
 
-class ActivityTrackpoint(Base):
+class ActivityTrackpoint(IntIdModel):
     """A single GPS/physiology sample of an activity.
 
     Bulk-loaded immutable data: intentionally no audit columns.
@@ -17,9 +17,8 @@ class ActivityTrackpoint(Base):
 
     __tablename__ = "activity_trackpoints"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     activity_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("activities.uuid", ondelete="CASCADE"), nullable=False
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

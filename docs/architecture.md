@@ -46,7 +46,11 @@ http (routes)  →  services (business logic)  →  dao (SQLAlchemy)  →  model
   plain data (views / dataclasses), never ORM objects. Services own the
   transaction boundaries (they commit).
 - **`dao/`** — *all* SQLAlchemy code. Sessions are injected via the
-  constructor; DAOs never create sessions and never commit.
+  constructor; DAOs never create sessions and never commit. Shared bases in
+  `base_dao.py` follow the identifier convention: `BaseDao` holds the
+  session + model and provides `list(offset, limit)`; `IntIdDao` adds
+  `get_by_id`; `IntIdUuidDao` (extends `IntIdDao`) adds `get_by_uuid`.
+  Concrete DAOs are thin: scoped/ordered query variants on top.
 - **`models/`** — SQLAlchemy 2.0 typed ORM models (`Mapped[...]`).
 - **`schemas/`** — pydantic v2, split into `requests/` (inbound), `views/`
   (outbound), and `mappers/` (the bridge).

@@ -6,21 +6,22 @@ from uuid import UUID
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdUuidModel, TimestampMixin
 
 
-class Activity(Base, TimestampMixin):
+class Activity(IntIdUuidModel, TimestampMixin):
     """An imported sport activity owned by a single user.
 
-    Holds every metric that applies to most sports. Sport-specific metrics
-    live in the 1:1 ``<sport>_activity`` tables.
+    ``id`` is the internal integer primary key; ``uuid`` is the public
+    identifier used in URLs and the API. Holds every metric that applies to
+    most sports. Sport-specific metrics live in the 1:1 ``<sport>_activity``
+    tables.
     """
 
     __tablename__ = "activities"
 
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("users.uuid", ondelete="CASCADE"), nullable=False
     )
     sport_type: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)

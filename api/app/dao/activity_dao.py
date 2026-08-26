@@ -3,17 +3,21 @@
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdUuidDao
 from app.models.activity import Activity
 
 
-class ActivityDao(BaseDao[Activity]):
+class ActivityDao(IntIdUuidDao[Activity]):
     """Reads and writes of the ``activities`` table.
 
     Every lookup is scoped to a single user. Soft-deleted activities
     (``deleted_at IS NOT NULL``) are never returned.
     """
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, Activity)
 
     def add(self, activity: Activity) -> Activity:
         """Persist a new activity. The caller commits the session."""
@@ -21,10 +25,10 @@ class ActivityDao(BaseDao[Activity]):
         self.session.flush()
         return activity
 
-    def get_for_user(self, user_id: UUID, activity_id: UUID) -> Activity | None:
+    def get_for_user(self, user_id: UUID, activity_uuid: UUID) -> Activity | None:
         """Fetch an active activity owned by ``user_id``, or None."""
         statement = select(Activity).where(
-            Activity.id == activity_id,
+            Activity.uuid == activity_uuid,
             Activity.user_id == user_id,
             Activity.deleted_at.is_(None),
         )

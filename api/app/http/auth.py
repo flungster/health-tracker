@@ -25,7 +25,7 @@ def register(
     user = auth_service.register(request)
     return AuthResponseView(
         user=UserMapper.to_view(user),
-        token=token_service.issue(user.id),
+        token=token_service.issue(user.uuid),
     )
 
 
@@ -41,5 +41,5 @@ def login(
     user = auth_service.login(request)
     return AuthResponseView(
         user=UserMapper.to_view(user),
-        token=token_service.issue(user.id),
+        token=token_service.issue(user.uuid),
     )

@@ -3,13 +3,17 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdDao
 from app.models.activity_hr_zone import ActivityHrZone
 
 
-class ActivityHrZoneDao(BaseDao[ActivityHrZone]):
+class ActivityHrZoneDao(IntIdDao[ActivityHrZone]):
     """Reads/writes of the 1:1 ``activity_hr_zones`` table."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, ActivityHrZone)
 
     def add(self, zone: ActivityHrZone) -> ActivityHrZone:
         """Persist a zone row. The caller commits the session."""

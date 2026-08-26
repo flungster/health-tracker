@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import ForeignKey, Integer, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 
 
-class ActivityHrZone(Base, TimestampMixin):
+class ActivityHrZone(IntIdModel, TimestampMixin):
     """Seconds spent in each heart-rate zone for one activity.
 
     Zones are percent-of-max-HR bands (see the migration comments).
@@ -17,7 +17,7 @@ class ActivityHrZone(Base, TimestampMixin):
     __tablename__ = "activity_hr_zones"
 
     activity_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True
+        Uuid, ForeignKey("activities.uuid", ondelete="CASCADE"), nullable=False, unique=True
     )
     zone_1_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     zone_2_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

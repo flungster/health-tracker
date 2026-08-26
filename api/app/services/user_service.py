@@ -45,7 +45,7 @@ class UserService:
           (AuthenticationError when it does not match).
         Commits the session on success.
         """
-        user = self._user_dao.get_by_id(user_id)
+        user = self._user_dao.get_by_uuid(user_id)
         if user is None:
             raise AuthenticationError("Account no longer exists.")
 

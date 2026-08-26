@@ -129,7 +129,7 @@ class ImportService:
         file_path = self._store_file(user_id, activity_id, filename, data, parser.source_format)
 
         activity = ActivityMapper.create_activity(
-            activity_id=activity_id,
+            activity_uuid=activity_id,
             user_id=user_id,
             sport_type=sport,
             name=name,
@@ -162,7 +162,7 @@ class ImportService:
         logger.info(
             "Imported %s activity %s for user %s (%d trackpoints)",
             sport,
-            activity.id,
+            activity.uuid,
             user_id,
             len(parsed.trackpoints),
         )
@@ -195,7 +195,7 @@ class ImportService:
         if sport_type == "running":
             self._running_dao.add(
                 ActivityMapper.create_running_activity(
-                    activity.id,
+                    activity.uuid,
                     avg_pace_s_per_km=stats.running_avg_pace_s_per_km,
                     min_pace_s_per_km=stats.running_min_pace_s_per_km,
                     max_pace_s_per_km=stats.running_max_pace_s_per_km,
@@ -204,7 +204,7 @@ class ImportService:
         elif sport_type == "cycling":
             self._cycling_dao.add(
                 ActivityMapper.create_cycling_activity(
-                    activity.id,
+                    activity.uuid,
                     power_avg_w=stats.cycling_power_avg_w,
                     power_max_w=stats.cycling_power_max_w,
                 )
@@ -212,9 +212,9 @@ class ImportService:
         elif sport_type == "rowing":
             self._rowing_dao.add(
                 ActivityMapper.create_rowing_activity(
-                    activity.id,
+                    activity.uuid,
                     split_500m_seconds=stats.rowing_split_500m_seconds,
                 )
             )
         elif sport_type == "strength":
-            self._strength_dao.add(ActivityMapper.create_strength_activity(activity.id))
+            self._strength_dao.add(ActivityMapper.create_strength_activity(activity.uuid))

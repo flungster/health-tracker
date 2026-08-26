@@ -47,13 +47,13 @@ def import_activity(
     data = file.file.read(max_bytes + 1)
     filename = file.filename or "activity"
     activity = import_service.import_activity(
-        current_user.id,
+        current_user.uuid,
         filename,
         data,
         sport_override=sport_type,
         name_override=name,
     )
-    detail = activity_service.get_detail(current_user.id, activity.id)
+    detail = activity_service.get_detail(current_user.uuid, activity.uuid)
     return ActivityMapper.to_detail_view(*detail)
 
 
@@ -65,7 +65,7 @@ def list_activities(
     current_user: User = Depends(get_current_user),
 ) -> ActivitiesListView:
     """The user's activities, newest first, with pagination."""
-    activities, total = activity_service.list_for_user(current_user.id, limit, offset)
+    activities, total = activity_service.list_for_user(current_user.uuid, limit, offset)
     return ActivitiesListView(
         items=[ActivityMapper.to_summary_view(activity) for activity in activities],
         total=total,
@@ -81,7 +81,7 @@ def get_activity(
     current_user: User = Depends(get_current_user),
 ) -> ActivityDetailView:
     """Full detail for one of the user's activities."""
-    detail = activity_service.get_detail(current_user.id, activity_id)
+    detail = activity_service.get_detail(current_user.uuid, activity_id)
     return ActivityMapper.to_detail_view(*detail)
 
 
@@ -92,7 +92,7 @@ def list_trackpoints(
     current_user: User = Depends(get_current_user),
 ) -> TrackpointsView:
     """All recorded samples of one of the user's activities."""
-    points = activity_service.get_trackpoints(current_user.id, activity_id)
+    points = activity_service.get_trackpoints(current_user.uuid, activity_id)
     return TrackpointsView(items=[ActivityMapper.to_trackpoint_view(point) for point in points])
 
 
@@ -103,7 +103,7 @@ def list_splits(
     current_user: User = Depends(get_current_user),
 ) -> SplitsView:
     """The precomputed splits of one of the user's activities."""
-    detail = activity_service.get_detail(current_user.id, activity_id)
+    detail = activity_service.get_detail(current_user.uuid, activity_id)
     return SplitsView(items=[ActivityMapper.to_split_view(split) for split in detail[1]])
 
 
@@ -116,13 +116,13 @@ def update_activity(
 ) -> ActivityDetailView:
     """Update name, description and/or sport of one of the user's activities."""
     activity_service.update_for_user(
-        current_user.id,
+        current_user.uuid,
         activity_id,
         name=request.name,
         description=request.description,
         sport_type=request.sport_type,
     )
-    detail = activity_service.get_detail(current_user.id, activity_id)
+    detail = activity_service.get_detail(current_user.uuid, activity_id)
     return ActivityMapper.to_detail_view(*detail)
 
 
@@ -133,7 +133,7 @@ def delete_activity(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Soft-delete one of the user's activities."""
-    activity_service.delete_for_user(current_user.id, activity_id)
+    activity_service.delete_for_user(current_user.uuid, activity_id)
     return Response(status_code=204)
 
 

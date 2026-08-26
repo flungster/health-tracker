@@ -3,13 +3,17 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdDao
 from app.models.activity_split import ActivitySplit
 
 
-class ActivitySplitDao(BaseDao[ActivitySplit]):
+class ActivitySplitDao(IntIdDao[ActivitySplit]):
     """Reads/writes of the precomputed ``activity_splits`` table."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, ActivitySplit)
 
     def add_all(self, splits: list[ActivitySplit]) -> None:
         """Insert a batch of splits. The caller commits the session."""

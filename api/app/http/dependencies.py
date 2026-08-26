@@ -137,7 +137,7 @@ def get_current_user(
     if user_id is None:
         raise AuthenticationError("Invalid or expired token.")
 
-    user = UserDao(unit_of_work.session).get_by_id(user_id)
+    user = UserDao(unit_of_work.session).get_by_uuid(user_id)
     if user is None:
         raise AuthenticationError("Account no longer exists.")
     return user

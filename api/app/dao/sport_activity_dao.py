@@ -26,8 +26,7 @@ class SportActivityDao[ModelT: SportActivityMixin](BaseDao[ModelT]):
     """
 
     def __init__(self, session: Session, model: type[ModelT]) -> None:
-        super().__init__(session)
-        self._model = model
+        super().__init__(session, model)
 
     def add(self, row: ModelT) -> ModelT:
         """Persist a sport metric row. The caller commits the session."""

@@ -3,11 +3,11 @@
 from sqlalchemy import Float, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 from app.models.sport_activity import SportActivityMixin
 
 
-class StrengthActivity(Base, SportActivityMixin, TimestampMixin):
+class StrengthActivity(IntIdModel, SportActivityMixin, TimestampMixin):
     """Summary metrics for activities with sport_type = strength."""
 
     __tablename__ = "strength_activity"

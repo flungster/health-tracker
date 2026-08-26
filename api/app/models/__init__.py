@@ -5,11 +5,13 @@ from app.models.activity_hr_zone import ActivityHrZone
 from app.models.activity_split import ActivitySplit
 from app.models.activity_trackpoint import ActivityTrackpoint
 from app.models.activity_type import ActivityType
+from app.models.base import IntIdModel, IntIdUuidModel
 from app.models.cycling_activity import CyclingActivity
 from app.models.rowing_activity import RowingActivity
 from app.models.running_activity import RunningActivity
 from app.models.sport_activity import SportActivityMixin
 from app.models.strength_activity import StrengthActivity
+from app.models.strength_exercise_set import StrengthExerciseSet
 
 __all__ = [
     "Activity",
@@ -20,6 +22,9 @@ __all__ = [
     "CyclingActivity",
     "RunningActivity",
     "RowingActivity",
+    "IntIdModel",
+    "IntIdUuidModel",
     "SportActivityMixin",
     "StrengthActivity",
+    "StrengthExerciseSet",
 ]

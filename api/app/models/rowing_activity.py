@@ -3,11 +3,11 @@
 from sqlalchemy import Float, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 from app.models.sport_activity import SportActivityMixin
 
 
-class RowingActivity(Base, SportActivityMixin, TimestampMixin):
+class RowingActivity(IntIdModel, SportActivityMixin, TimestampMixin):
     """Stroke metrics for activities with sport_type = rowing."""
 
     __tablename__ = "rowing_activity"

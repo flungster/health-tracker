@@ -22,9 +22,9 @@ class UserMapper:
         email_normalized: str,
         password_hash: str,
     ) -> User:
-        """Build a new User model (id generated here, not in the database)."""
+        """Build a new User model (public uuid generated here, not in the DB)."""
         return User(
-            id=uuid4(),
+            uuid=uuid4(),
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             email=email_normalized,
@@ -35,7 +35,7 @@ class UserMapper:
     def to_view(user: User) -> UserView:
         """Map an ORM user to its public view."""
         return UserView(
-            id=user.id,
+            id=user.uuid,
             first_name=user.first_name,
             last_name=user.last_name,
             email=user.email,

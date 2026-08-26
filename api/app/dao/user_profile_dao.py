@@ -3,13 +3,17 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.dao.base_dao import BaseDao
+from app.dao.base_dao import IntIdDao
 from app.models.user_profile import UserProfile
 
 
-class UserProfileDao(BaseDao[UserProfile]):
+class UserProfileDao(IntIdDao[UserProfile]):
     """Reads and writes of the ``user_profiles`` table."""
+
+    def __init__(self, session: Session) -> None:
+        super().__init__(session, UserProfile)
 
     def get(self, user_id: UUID) -> UserProfile | None:
         """Fetch the active profile for a user, or None."""

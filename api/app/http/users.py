@@ -30,7 +30,7 @@ def update_me(
     user_service: UserService = Depends(get_user_service),
 ) -> UserView:
     """Update the authenticated user's own account fields."""
-    user = user_service.update_me(current_user.id, request)
+    user = user_service.update_me(current_user.uuid, request)
     return UserMapper.to_view(user)
 
 
@@ -40,7 +40,7 @@ def get_profile(
     user_service: UserService = Depends(get_user_service),
 ) -> ProfileView:
     """Return the authenticated user's health settings."""
-    profile = user_service.get_profile(current_user.id)
+    profile = user_service.get_profile(current_user.uuid)
     if profile is None:
         return UserMapper.empty_profile_view()
     return UserMapper.to_profile_view(profile)
@@ -53,5 +53,5 @@ def update_profile(
     user_service: UserService = Depends(get_user_service),
 ) -> ProfileView:
     """Update the authenticated user's health settings."""
-    profile = user_service.update_profile(current_user.id, request)
+    profile = user_service.update_profile(current_user.uuid, request)
     return UserMapper.to_profile_view(profile)

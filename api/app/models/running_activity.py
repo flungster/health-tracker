@@ -3,11 +3,11 @@
 from sqlalchemy import Float
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 from app.models.sport_activity import SportActivityMixin
 
 
-class RunningActivity(Base, SportActivityMixin, TimestampMixin):
+class RunningActivity(IntIdModel, SportActivityMixin, TimestampMixin):
     """Pace metrics for activities with sport_type = running."""
 
     __tablename__ = "running_activity"

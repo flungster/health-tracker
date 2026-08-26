@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import Float, ForeignKey, Integer, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 
 
-class ActivitySplit(Base, TimestampMixin):
+class ActivitySplit(IntIdModel, TimestampMixin):
     """A precomputed split (per km or per mile) of an activity.
 
     Computed from trackpoints at import time; ``pace_seconds`` is the pace
@@ -17,9 +17,8 @@ class ActivitySplit(Base, TimestampMixin):
 
     __tablename__ = "activity_splits"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     activity_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("activities.uuid", ondelete="CASCADE"), nullable=False
     )
     split_type: Mapped[str] = mapped_column(Text, nullable=False)
     split_index: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -3,11 +3,11 @@
 from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import IntIdModel, TimestampMixin
 from app.models.sport_activity import SportActivityMixin
 
 
-class CyclingActivity(Base, SportActivityMixin, TimestampMixin):
+class CyclingActivity(IntIdModel, SportActivityMixin, TimestampMixin):
     """Power metrics for activities with sport_type = cycling."""
 
     __tablename__ = "cycling_activity"
