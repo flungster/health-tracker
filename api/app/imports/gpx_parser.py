@@ -7,7 +7,7 @@ import gpxpy
 from gpxpy.gpx import GPXException, GPXTrack, GPXTrackPoint
 
 from app.errors.app_error import ActivityImportError
-from app.imports.base import ActivityParser
+from app.imports.base import ActivityParser, SourceFormat
 from app.imports.geo import compute_distance_m, compute_elevation_gain_m
 from app.imports.parsed import ParsedActivity, ParsedTrackpoint
 from app.imports.sports import resolve_sport
@@ -17,7 +17,7 @@ from app.imports.timeutil import to_utc
 class GpxParser(ActivityParser):
     """Parses GPS Exchange Format (.gpx) activity files."""
 
-    source_format = "gpx"
+    source_format = SourceFormat.GPX
 
     def supports(self, filename: str, header: bytes) -> bool:
         return filename.lower().endswith(".gpx")

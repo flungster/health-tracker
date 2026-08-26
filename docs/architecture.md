@@ -104,6 +104,13 @@ OpenStreetMap tiles — the only outbound request the browser makes.
 - **Precomputed at import** — splits, heart-rate zones, and sport metrics are
   derived once, at import time, and stored. Reads are cheap and the UI doesn't
   recompute. Relabeling an activity's sport (PATCH) does not recompute.
+- **Reference tables for enum-like values** — value sets that are enums in
+  code are seeded reference tables keyed by the value itself
+  (`activity_types`, `source_formats`, `split_units`), referenced by foreign
+  key from the tables that store them; membership is enforced by the schema.
+  Code mirrors each set as a Python `Enum` (`SportType`, `SourceFormat`,
+  `SplitUnit`) and validates against it before the FK does; the API speaks
+  the value string, never a row id.
 - **Original files kept** — the uploaded file is stored in the `uploads`
   volume at `/data/uploads/<user_id>/<activity_id>.<ext>` for re-import/export.
 - **User scoping is a invariant** — every read is scoped by `user_id` in the

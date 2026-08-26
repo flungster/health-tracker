@@ -9,7 +9,7 @@ from fitdecode import FitDataMessage
 from fitdecode.exceptions import FitError  # type: ignore[import-untyped]
 
 from app.errors.app_error import ActivityImportError
-from app.imports.base import ActivityParser
+from app.imports.base import ActivityParser, SourceFormat
 from app.imports.parsed import ParsedActivity, ParsedSportMetrics, ParsedTrackpoint
 from app.imports.sports import resolve_sport
 from app.imports.timeutil import to_utc
@@ -32,7 +32,7 @@ _FIT_SPORT_BY_VALUE: dict[int, str] = {
 class FitParser(ActivityParser):
     """Parses Garmin/FIT (.fit) activity files."""
 
-    source_format = "fit"
+    source_format = SourceFormat.FIT
 
     def supports(self, filename: str, header: bytes) -> bool:
         if len(header) >= 12 and header[0] in (0x0C, 0x0E) and header[8:12] == b".FIT":

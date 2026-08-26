@@ -2,13 +2,15 @@
 
 The schema is owned entirely by dbmate migrations in `db/migrations/`. The API
 never alters the schema. This document describes the current model (as of the
-`20260823000002_activities` migration) and the conventions it follows.
+`20260825000004_source_formats_split_units` migration) and the conventions it
+follows.
 
 ## Conventions
 
 - **Audit columns** — every table carries `created_at`, `updated_at`, and
-  `deleted_at` (`timestamptz`). The two exceptions are the bulk, immutable
-  sample tables (`activity_trackpoints`, `strength_exercise_sets`), documented
+  `deleted_at` (`timestamptz`). The exceptions are the bulk, immutable
+  sample tables (`activity_trackpoints`, `strength_exercise_sets`) and the
+  reference tables (e.g. `activity_types`, `created_at` only), documented
   below.
 - **Soft delete** — deletion sets `deleted_at`; a row is active while
   `deleted_at IS NULL`. All reads filter on it.
@@ -21,11 +23,17 @@ never alters the schema. This document describes the current model (as of the
   cascades to one), and every read is scoped to the caller. Other users' rows
   are indistinguishable from missing rows (404).
 - **Timestamps** — stored as UTC `timestamptz`.
-- **Sport types** — stored as `text` with a `CHECK` constraint listing the
-  allowed values, rather than a Postgres `ENUM` (easier to evolve, standard
-  SQL).
-- **Standard SQL** — the schema avoids Postgres-specific types so it stays
-  portable and the migrations stay simple.
+- **Reference tables for enum-like values** — a value set that would be an
+  enum in code (sport type, ...) is never stored as a bare `text` + `CHECK`.
+  It lives in a reference table whose primary key is the value itself, plus a
+  `description` for display (e.g. `activity_types`), and tables storing such
+  a value carry a **foreign key** to it, so membership is enforced by the
+  schema. Reference rows are seeded by migration and treated as immutable
+  (no `updated_at`/`deleted_at`; new values are added by migration). In code
+  the same set is mirrored as a Python `Enum`; the API keeps using the value
+  string, not a row id.
+- **Standard SQL** — the schema avoids Postgres-specific types (e.g. the
+  Postgres `ENUM` type) so it stays portable and the migrations stay simple.
 
 ## Relationship overview
 
@@ -38,8 +46,11 @@ users 1───┬───1 user_profiles
                                ├───1 running_activity
                                ├───1 cycling_activity
                                ├───1 rowing_activity
-                               └───┬───1 strength_activity
-                                   └───* strength_exercise_sets
+                               ├───┬───1 strength_activity
+                               │   └───* strength_exercise_sets
+                               ├───* activity_splits ──> split_units (reference)
+                               ├───> activity_types (reference)
+                               └───> source_formats (reference)
 ```
 
 `users` cascades to `activities`; `activities` cascades to all of its
@@ -82,7 +93,7 @@ most sports; sport-specific metrics live in the 1:1 `<sport>_activity` tables.
 |---|---|---|
 | `id` | `uuid` PK | Public identifier. |
 | `user_id` | `uuid` FK → users | Owner; every query is scoped to this. |
-| `sport_type` | `text` | `CHECK` against the canonical sport set. |
+| `sport_type` | `text` FK → activity_types.value | Canonical sport; drives which `<sport>_activity` table applies. |
 | `name` | `text` | From the file or user-chosen. |
 | `description` | `text` NULL | |
 | `started_at` / `ended_at` | `timestamptz` | UTC; `ended_at >= started_at`. |
@@ -93,12 +104,48 @@ most sports; sport-specific metrics live in the 1:1 `<sport>_activity` tables.
 | `elevation_gain_m` | `double` NULL | Cumulative positive gain. |
 | `heart_rate_min/avg/max_bpm` | `int` NULL | Each `> 0` when set. |
 | `cadence_avg_rpm` | `int` NULL | `> 0` when set. |
-| `source_format` | `text` | `gpx` / `tcx` / `fit` / `apple_health`. |
+| `source_format` | `text` FK → source_formats.value | `gpx` / `tcx` / `fit` / `apple_health`. |
 | `original_filename` | `text` NULL | As uploaded (for display). |
 | `file_path` | `text` NULL | Storage path of the original file in the uploads volume. |
 | audit | | |
 
 Indexes: `(user_id, started_at DESC)` for the feed, `(user_id, sport_type)`.
+
+### `activity_types`
+
+Reference table of the canonical sport/activity types (see the
+[reference-table convention](#conventions)). Seeded by migration, immutable.
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | The canonical code and the public API value (e.g. `running`). |
+| `description` | `text` | Human-readable label for the UI (e.g. `Running`). |
+| `created_at` | `timestamptz` | Only audit column (no updates/deletes on reference rows). |
+
+Seeded rows: `running`, `cycling`, `rowing`, `strength`, `yoga`, `hiking`,
+`walking`, `swimming`, `other`.
+
+### `source_formats`
+
+Reference table of the file formats activities can be imported from. Seeded
+by migration, immutable (same convention as `activity_types`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | `gpx`, `tcx`, `fit`, `apple_health`. |
+| `description` | `text` | Display label (e.g. `GPX`). |
+| `created_at` | `timestamptz` | Only audit column. |
+
+### `split_units`
+
+Reference table of the distance units splits are precomputed in. Seeded by
+migration, immutable.
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | `km`, `mi`. |
+| `description` | `text` | Display label (e.g. `Kilometres`). |
+| `created_at` | `timestamptz` | Only audit column. |
 
 ### `activity_trackpoints`
 
@@ -130,7 +177,7 @@ miles. Computed from trackpoints at import time.
 |---|---|---|
 | `id` | `bigint` PK (identity) | |
 | `activity_id` | `uuid` FK → activities | |
-| `split_type` | `text` | `km` or `mi`. |
+| `split_type` | `text` FK → split_units.value | `km` or `mi`. |
 | `split_index` | `int` | 1-based within its unit; unique with `(activity_id, split_type)`. |
 | `duration_seconds` | `int` | Time to cover this split. |
 | `pace_seconds` | `double` | Seconds per km (or per mile). |
@@ -188,6 +235,8 @@ time of writing.)
 |---|---|
 | `20260823000001_initial.sql` | `set_updated_at()`, `users`, `user_profiles`. |
 | `20260823000002_activities.sql` | `activities`, `activity_trackpoints`, `activity_splits`, `activity_hr_zones`, the four `<sport>_activity` tables, `strength_exercise_sets`. |
+| `20260825000003_activity_types.sql` | `activity_types` reference table (seeded); `activities.sport_type` becomes an FK to it (replacing the `CHECK`). |
+| `20260825000004_source_formats_split_units.sql` | `source_formats` + `split_units` reference tables (seeded); `activities.source_format` and `activity_splits.split_type` become FKs (replacing the `CHECK`s). |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

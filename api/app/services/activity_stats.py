@@ -7,6 +7,7 @@ are treated identically. This module is pure: no DB, no HTTP.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from app.imports.geo import haversine_m
 from app.imports.parsed import ParsedActivity, ParsedTrackpoint
@@ -15,11 +16,23 @@ KM_METERS = 1000.0
 MILE_METERS = 1609.344
 
 
+class SplitUnit(StrEnum):
+    """Distance units splits are precomputed in.
+
+    Values mirror the seeded rows of the ``split_units`` reference table
+    (the schema-level source of truth, enforced by
+    ``activity_splits_split_type_fkey``).
+    """
+
+    KM = "km"
+    MI = "mi"
+
+
 @dataclass
 class SplitStats:
     """One computed per-distance split."""
 
-    split_type: str
+    split_type: SplitUnit
     split_index: int
     duration_seconds: int
     pace_seconds: float
@@ -81,15 +94,15 @@ class ActivityStatistics:
         if cadences:
             stats.cadence_avg_rpm = round(sum(cadences) / len(cadences))
 
-        stats.splits = self.compute_splits(points, "km", KM_METERS)
-        stats.splits.extend(self.compute_splits(points, "mi", MILE_METERS))
+        stats.splits = self.compute_splits(points, SplitUnit.KM, KM_METERS)
+        stats.splits.extend(self.compute_splits(points, SplitUnit.MI, MILE_METERS))
 
         zone_reference = max_heart_rate or stats.heart_rate_max_bpm
         if zone_reference:
             stats.hr_zones = self.compute_hr_zones(points, zone_reference)
 
         stats.running_avg_pace_s_per_km = self._overall_pace(activity)
-        km_paces = [s.pace_seconds for s in stats.splits if s.split_type == "km"]
+        km_paces = [s.pace_seconds for s in stats.splits if s.split_type == SplitUnit.KM]
         if km_paces:
             stats.running_min_pace_s_per_km = min(km_paces)
             stats.running_max_pace_s_per_km = max(km_paces)
@@ -109,7 +122,7 @@ class ActivityStatistics:
         return stats
 
     def compute_splits(
-        self, points: Sequence[ParsedTrackpoint], split_type: str, unit_m: float
+        self, points: Sequence[ParsedTrackpoint], split_type: SplitUnit, unit_m: float
     ) -> list[SplitStats]:
         """Group samples into per-unit splits (km or mile) and time them."""
         series = self._distance_series(points)

@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element
 
 from app.errors.app_error import ActivityImportError
-from app.imports.base import ActivityParser
+from app.imports.base import ActivityParser, SourceFormat
 from app.imports.geo import compute_distance_m, compute_elevation_gain_m
 from app.imports.parsed import ParsedActivity, ParsedTrackpoint
 from app.imports.sports import resolve_sport
@@ -19,7 +19,7 @@ from app.imports.timeutil import parse_iso8601, parse_iso_duration_seconds
 class TcxParser(ActivityParser):
     """Parses Garmin Training Center XML (.tcx) activity files."""
 
-    source_format = "tcx"
+    source_format = SourceFormat.TCX
 
     def supports(self, filename: str, header: bytes) -> bool:
         return filename.lower().endswith(".tcx")

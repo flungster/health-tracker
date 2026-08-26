@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.imports.parsed import ParsedActivity, ParsedTrackpoint
 from app.main import app
-from app.services.activity_stats import KM_METERS, ActivityStatistics
+from app.services.activity_stats import KM_METERS, ActivityStatistics, SplitUnit
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -371,10 +371,14 @@ class TestActivityEndpoints:
         token = str(register_user()["token"])
         response = client.get("/api/v1/sports", headers=_auth(token))
         assert response.status_code == 200
+        # Reference-table backed: each entry is {value, description}.
         sports = response.json()["sports"]
-        assert "running" in sports
-        assert "cycling" in sports
-        assert "strength" in sports
+        values = [entry["value"] for entry in sports]
+        assert "running" in values
+        assert "cycling" in values
+        assert "strength" in values
+        running = next(entry for entry in sports if entry["value"] == "running")
+        assert running["description"] == "Running"
 
 
 class TestActivityStatistics:
@@ -409,7 +413,7 @@ class TestActivityStatistics:
                     lon=2.0,
                 )
             )
-        splits = ActivityStatistics().compute_splits(points, "km", KM_METERS)
+        splits = ActivityStatistics().compute_splits(points, SplitUnit.KM, KM_METERS)
         assert len(splits) == 3  # two full km + the ~0.11 km remainder
         assert splits[0].split_index == 1
         # 1 km takes ~9 steps x 10 s = ~90 s.

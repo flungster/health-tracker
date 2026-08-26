@@ -3,7 +3,7 @@
 Parsers are pure (bytes -> ParsedActivity); see the individual modules.
 """
 
-from app.imports.base import ActivityParser, FormatDetector
+from app.imports.base import ActivityParser, FormatDetector, SourceFormat
 from app.imports.fit_parser import FitParser
 from app.imports.gpx_parser import GpxParser
 from app.imports.parsed import ParsedActivity, ParsedSportMetrics, ParsedTrackpoint
@@ -20,6 +20,7 @@ __all__ = [
     "ParsedSportMetrics",
     "ParsedTrackpoint",
     "SPORT_TYPES",
+    "SourceFormat",
     "TcxParser",
     "build_default_detector",
     "resolve_sport",

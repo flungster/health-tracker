@@ -2,17 +2,32 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import ClassVar
 
 from app.errors.app_error import ActivityImportError
 from app.imports.parsed import ParsedActivity
 
 
+class SourceFormat(StrEnum):
+    """File formats activities can be imported from.
+
+    Values mirror the seeded rows of the ``source_formats`` reference table
+    (the schema-level source of truth, enforced by
+    ``activities_source_format_fkey``).
+    """
+
+    GPX = "gpx"
+    TCX = "tcx"
+    FIT = "fit"
+    APPLE_HEALTH = "apple_health"
+
+
 class ActivityParser(ABC):
     """Turns the raw bytes of one activity file format into a ParsedActivity."""
 
     #: Value stored in ``activities.source_format`` for this parser.
-    source_format: ClassVar[str]
+    source_format: ClassVar[SourceFormat]
 
     @abstractmethod
     def parse(self, data: bytes) -> ParsedActivity:

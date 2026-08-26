@@ -16,11 +16,77 @@ to Done in the overview.
 | M4 | Web frontend: feed, upload, activity detail (map/splits/HR), sport views | Done | 2026-08-24 |
 | M5 | Docker packaging + user docs (installation, usage, api, data-model) | Done | 2026-08-24 |
 | M6 | Hardening: limits, backup story, CI, release | Done | 2026-08-25 |
+| M7 | Reference table: sport types (`activity_types` + FK) | Done | 2026-08-25 |
+| M8 | Reference tables: `source_formats` + `split_units` | Done | 2026-08-25 |
 
 > 2026-08-25 — Refactor + compliance batch (pre-M6): removed all third-party
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M8 — Reference tables: source formats + split units (2026-08-25)
+
+Finished applying the M7 convention to the two remaining enum-like columns,
+so the rule now has zero exceptions in the schema.
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(76 tests) · migration verified up and down, plus direct FK-violation
+checks on both columns · stack rebuilt, smoke passed.
+
+- Migration `20260825000004_source_formats_split_units.sql`: seeds
+  `source_formats` (`gpx`, `tcx`, `fit`, `apple_health`) and `split_units`
+  (`km`, `mi`); `activities.source_format` and `activity_splits.split_type`
+  become FKs (CHECKs dropped; down restores them).
+- Code enums: `app/imports/base.py::SourceFormat` (parser `source_format`
+  ClassVars now use it) and
+  `app/services/activity_stats.py::SplitUnit` (`SplitStats.split_type` and
+  `compute_splits` typed against it).
+- No new API surface: the API keeps returning the value strings; no ORM
+  models/DAOs were added because nothing reads these tables yet (they are
+  pure schema constraints — a read path would add them when needed).
+
+## M7 — Reference tables: sport types (2026-08-25)
+
+New convention, retroactively applied to its one existing violation: values
+that are enums in code are stored in **reference tables** (PK = the value
+itself + `description`), referenced by **foreign key** — never bare
+`text` + `CHECK`. The rule is now in `AGENTS.md` (Database rules), so it
+binds all future schema work.
+
+**Gates:** `make lint` green (ruff, mypy 72 api files, tsc, eslint) ·
+`make test` green (76 tests) · migration verified up **and** down on the
+live stack, plus a direct FK-violation check (`INSERT … sport_type='skydiving'`
+rejected by `activities_sport_type_fkey`) · stack rebuilt, smoke passed,
+`GET /sports` serving the new shape on :9090.
+
+### Convention (AGENTS.md → Database rules)
+- Reference-table rule written: value = PK + `description`, FK from storing
+  tables, rows seeded and immutable (no `updated_at`/`deleted_at`), new
+  values added by migration. Code mirrors the set as a Python `Enum`; the
+  service validates (app error envelope) and the FK is the schema backstop.
+  The public API keeps the value string, never a row id.
+- `docs/data-model.md` conventions + table reference updated to match.
+
+### `activity_types` (the sport types)
+- Migration `20260825000003_activity_types.sql` (up/down verified): creates
+  and seeds `activity_types` (9 rows: running…other, each with a display
+  description), drops `activities_sport_type_check`, adds
+  `activities_sport_type_fkey` → `activity_types.value`. Down reverses all of
+  it (verified).
+- API: `ActivityType` model (no audit mixin — reference rows are immutable),
+  `ActivityTypeDao`, `SportService`, and `GET /sports` now serves the table:
+  `{"sports": [{"value": "running", "description": "Running"}, …]}`.
+- Code enum: `app/imports/sports.py::SportType` (StrEnum) mirrors the seeded
+  rows; `SPORT_TYPES` is derived from it, `resolve_sport` returns `SportType`
+  (still a `str`, so parser/mapper call sites are unchanged). The enum's doc
+  points at the table as the schema-level source of truth.
+- Web: `SportsView` typed as `{value, description}[]`; the upload sport
+  picker now shows the reference `description` (no more client-side
+  capitalization).
+
+### Follow-up
+- `activities.source_format` and `activity_splits.split_type` are enum-like
+  too; converted with the same pattern in M8.
 
 ## M6 — Hardening: limits, backup story, CI, release (2026-08-25)
 
