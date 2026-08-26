@@ -7,6 +7,10 @@ follows [Semantic Versioning](https://semver.org/) — see
 
 ## Unreleased
 
+## 0.2.0 — 2026-08-25
+
+Hardening, operations, and schema conventions:
+
 - Hardening: per-IP rate limits on login (10/min) and register (5/min),
   returned as 429 `RATE_LIMITED` with a `Retry-After` header.
 - Import safety: files with more than `MAX_TRACKPOINTS` trackpoints
@@ -17,8 +21,15 @@ follows [Semantic Versioning](https://semver.org/) — see
   format + uploads tarball).
 - CI (GitHub Actions): lint, API tests, image builds, and an end-to-end smoke
   test on every push/PR.
+- Reference tables for enum-like values: `activity_types`, `source_formats`,
+  and `split_units` are now seeded reference tables referenced by foreign key
+  (replacing `text` + `CHECK`), with matching Python enums; `GET /sports`
+  returns `{value, description}` pairs and the web sport picker shows the
+  display labels.
 - Release process documented in `docs/release.md`; version is tracked in
   `VERSION` (kept in sync with `api/pyproject.toml` by CI).
+- README now notes the project is built with AI, with a development log of
+  the agent and open-source models used.
 
 ## 0.1.0 — 2026-08-24
 
