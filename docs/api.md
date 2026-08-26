@@ -369,13 +369,23 @@ activity then disappears from `GET /activities` and its detail reads as 404.
 
 ### `GET /sports`
 
-The canonical list of sport types, in display order. No auth required.
+The canonical list of sport types, from the `activity_types` reference table,
+in `value` order. Each entry carries the public `value` (used in import
+overrides and activity responses) and a human-readable `description` for
+display. No auth required.
 
 ```json
 {
   "sports": [
-    "running", "cycling", "rowing", "strength",
-    "yoga", "hiking", "walking", "swimming", "other"
+    { "value": "cycling",  "description": "Cycling" },
+    { "value": "hiking",   "description": "Hiking" },
+    { "value": "other",    "description": "Other" },
+    { "value": "rowing",   "description": "Rowing" },
+    { "value": "running",  "description": "Running" },
+    { "value": "strength", "description": "Strength" },
+    { "value": "swimming", "description": "Swimming" },
+    { "value": "walking",  "description": "Walking" },
+    { "value": "yoga",     "description": "Yoga" }
   ]
 }
 ```

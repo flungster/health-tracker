@@ -141,7 +141,14 @@ class TrackpointsView(BaseModel):
     items: list[TrackpointView]
 
 
+class SportTypeView(BaseModel):
+    """One sport type from the activity_types reference table."""
+
+    value: str
+    description: str
+
+
 class SportsView(BaseModel):
     """The canonical list of sport types (for pickers)."""
 
-    sports: list[str]
+    sports: list[SportTypeView]

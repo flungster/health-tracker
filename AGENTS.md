@@ -110,9 +110,23 @@ invocations in docs instead.
   - `id bigint` for internal rows; `uuid` (v4) for anything public-facing
     (users, activities and their sub-resources referenced in URLs).
   - Comment every table and every non-obvious column (`COMMENT ON ...`).
-  - Prefer standard SQL over Postgres-specific types/features (e.g. `text` +
-    `CHECK` constraint instead of `ENUM`; `timestamptz` is fine, it is standard).
+  - Prefer standard SQL over Postgres-specific types/features (never the
+    Postgres `ENUM` type — see the reference-table rule below; `timestamptz`
+    is fine, it is standard).
   - Timestamps over booleans whenever a "when" matters.
+- **Reference tables for enum-like values** — a value set that would be an
+  enum in code (sport type, status, unit, ...) is never stored as a bare
+  `text` + `CHECK`. It lives in a reference table whose primary key is the
+  value itself (`text`) plus a `description` for display (e.g.
+  `activity_types`); every table storing such a value carries a **foreign
+  key** to it, so membership is enforced by the schema. Reference rows are
+  seeded in the migration that creates the table and are treated as
+  immutable: reference tables have no `updated_at`/`deleted_at` (the
+  "every table" audit rule above does not apply to them), and new values are
+  added by a later migration. In code the same value set is mirrored as a
+  Python `Enum`; the service layer validates against it (so clients get the
+  app error envelope) and the FK is the schema-level backstop. The public
+  API keeps using the value string, not a row id.
 - Email addresses are normalized (trim + lowercase) in the service/mapper layer
   before they reach the DB; `users.email` has a unique constraint.
 - Every query that reads user data is scoped by `user_id` (enforced in DAOs).

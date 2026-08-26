@@ -6,7 +6,6 @@ import { useNavigate } from "react-router-dom";
 import { useImportActivity, useSports } from "../api/hooks";
 import UploadZone from "../components/UploadZone";
 import { Card, ErrorNote } from "../components/Ui";
-import { capitalize } from "../format";
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -71,8 +70,8 @@ export default function UploadPage() {
               >
                 <option value="">Detect from file</option>
                 {sports.map((sport) => (
-                  <option key={sport} value={sport}>
-                    {capitalize(sport)}
+                  <option key={sport.value} value={sport.value}>
+                    {sport.description}
                   </option>
                 ))}
               </select>

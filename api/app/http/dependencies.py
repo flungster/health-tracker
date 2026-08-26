@@ -13,6 +13,7 @@ from app.dao.activity_dao import ActivityDao
 from app.dao.activity_hr_zone_dao import ActivityHrZoneDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
+from app.dao.activity_type_dao import ActivityTypeDao
 from app.dao.sport_activity_dao import (
     CyclingActivityDao,
     RowingActivityDao,
@@ -32,6 +33,7 @@ from app.services.activity_service import ActivityService
 from app.services.activity_stats import ActivityStatistics
 from app.services.auth_service import AuthService
 from app.services.import_service import ImportService
+from app.services.sport_service import SportService
 from app.services.user_service import UserService
 
 
@@ -93,6 +95,13 @@ def get_import_service(
         statistics=ActivityStatistics(),
         settings=settings,
     )
+
+
+def get_sport_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+) -> SportService:
+    """SportService reading the global sport type reference table."""
+    return SportService(activity_type_dao=ActivityTypeDao(unit_of_work.session))
 
 
 def get_user_service(

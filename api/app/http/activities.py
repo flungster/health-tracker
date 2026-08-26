@@ -10,8 +10,8 @@ from app.http.dependencies import (
     get_activity_service,
     get_current_user,
     get_import_service,
+    get_sport_service,
 )
-from app.imports import SPORT_TYPES
 from app.models.user import User
 from app.schemas.mappers.activity_mapper import ActivityMapper
 from app.schemas.requests.activity_requests import ActivityUpdateRequest
@@ -20,10 +20,12 @@ from app.schemas.views.activity_views import (
     ActivityDetailView,
     SplitsView,
     SportsView,
+    SportTypeView,
     TrackpointsView,
 )
 from app.services.activity_service import ActivityService
 from app.services.import_service import ImportService
+from app.services.sport_service import SportService
 
 router = APIRouter(prefix="/api/v1", tags=["activities"])
 
@@ -136,6 +138,9 @@ def delete_activity(
 
 
 @router.get("/sports", response_model=SportsView)
-def list_sports() -> SportsView:
+def list_sports(sport_service: SportService = Depends(get_sport_service)) -> SportsView:
     """The canonical list of sport types (for pickers in the UI)."""
-    return SportsView(sports=list(SPORT_TYPES))
+    types = sport_service.list_types()
+    return SportsView(
+        sports=[SportTypeView(value=t.value, description=t.description) for t in types]
+    )

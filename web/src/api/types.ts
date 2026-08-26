@@ -126,6 +126,11 @@ export type TrackpointsView = {
   items: TrackpointView[];
 };
 
+export type SportTypeView = {
+  value: string;
+  description: string;
+};
+
 export type SportsView = {
-  sports: string[];
+  sports: SportTypeView[];
 };
