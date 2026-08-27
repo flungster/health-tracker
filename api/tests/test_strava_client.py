@@ -60,31 +60,31 @@ class TestRequestConstruction:
         assert request.headers["Authorization"] == "Bearer secret-token"
         assert body == {"id": 12345}
 
-    def test_list_activity_summaries_omits_after_on_first_page(self) -> None:
+    def test_list_activity_summaries_omits_before_on_first_page(self) -> None:
         seen: dict[str, httpx.Request] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen["request"] = request
             return httpx.Response(200, json=[])
 
-        _client(handler).list_activity_summaries("secret-token", after=None)
+        _client(handler).list_activity_summaries("secret-token", before=None)
 
         request = seen["request"]
         assert request.url.path == "/api/v3/athlete/activities"
         query = request.url.params
-        assert "after" not in query
+        assert "before" not in query
         assert query["per_page"] == "100"
 
-    def test_list_activity_summaries_passes_after_cursor(self) -> None:
+    def test_list_activity_summaries_passes_before_cursor(self) -> None:
         seen: dict[str, httpx.Request] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen["request"] = request
             return httpx.Response(200, json=[])
 
-        _client(handler).list_activity_summaries("secret-token", after=1751362800)
+        _client(handler).list_activity_summaries("secret-token", before=1751362800)
 
-        assert seen["request"].url.params["after"] == "1751362800"
+        assert seen["request"].url.params["before"] == "1751362800"
 
     def test_get_activity_targets_the_external_id(self) -> None:
         seen: dict[str, httpx.Request] = {}

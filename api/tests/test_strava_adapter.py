@@ -184,7 +184,9 @@ class TestActivityIdPages:
         assert len(page.external_activity_ids) == 100
         assert page.next_cursor == expected
 
-    def test_cursor_is_sent_as_after(self) -> None:
+    def test_cursor_is_sent_as_before(self) -> None:
+        # The walk goes newest -> oldest, so the cursor is sent as ``before``
+        # (fetch the older page), not ``after`` (which would loop the same page).
         seen: dict[str, httpx.Request] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -193,7 +195,7 @@ class TestActivityIdPages:
 
         _adapter(handler).fetch_activity_ids("at-123", "1751362800")
 
-        assert seen["request"].url.params["after"] == "1751362800"
+        assert seen["request"].url.params["before"] == "1751362800"
 
     def test_garbage_cursor_rejected(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

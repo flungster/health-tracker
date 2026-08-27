@@ -98,19 +98,20 @@ class StravaAdapter(ProviderAdapter):
         )
 
     def fetch_activity_ids(self, access_token: str, cursor: str | None) -> ActivityIdPage:
-        after = self._decode_cursor(cursor)
+        before = self._decode_cursor(cursor)
         summaries = self._client.list_activity_summaries(
-            access_token, after=after, per_page=DEFAULT_PER_PAGE
+            access_token, before=before, per_page=DEFAULT_PER_PAGE
         )
         external_ids: list[str] = []
         for entry in summaries:
             if entry.get("id") is not None:
                 external_ids.append(str(entry["id"]))
 
-        # The cursor is the unix start timestamp of the page's oldest
-        # activity. Re-fetching the boundary activity (if Strava treats
-        # ``after`` as inclusive) is harmless: the dedup index on
-        # (provider, external_activity_id) imports it once.
+        # The walk goes newest -> oldest. The cursor is the unix start
+        # timestamp of the page's oldest activity; the next call passes it
+        # as ``before`` to fetch the older page. The boundary activity may be
+        # returned twice (Strava treats ``before`` as inclusive) — harmless,
+        # the dedup index on (provider, external_activity_id) imports it once.
         next_cursor: str | None = None
         if len(summaries) >= DEFAULT_PER_PAGE and summaries:
             oldest = summaries[-1]
@@ -128,15 +129,16 @@ class StravaAdapter(ProviderAdapter):
 
     @staticmethod
     def _decode_cursor(cursor: str | None) -> int | None:
+        """The opaque cursor as the unix ``before`` timestamp, or None."""
         if cursor is None:
             return None
         try:
-            after = int(cursor)
+            before = int(cursor)
         except ValueError:
             raise ProviderUpstreamError(
                 "The stored Strava sync cursor is invalid; disconnect and reconnect to reset it."
             ) from None
-        return after if after > 0 else None
+        return before if before > 0 else None
 
     @staticmethod
     def _credentials_from_token_response(body: dict[str, Any]) -> ProviderCredentials:

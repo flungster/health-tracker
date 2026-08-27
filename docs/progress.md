@@ -78,8 +78,10 @@ smoke passed · adapter verified importable in the running container.
 - Cursor semantics: the opaque `sync_cursor` is the unix start-timestamp of
   the page's oldest activity; a full (100) page advances it, a short/empty
   page ends the walk. Re-fetching the boundary activity (if Strava treats
-  `after` as inclusive) is harmless — the dedup index imports each
-  `(provider, external_activity_id)` once.
+  `before` as inclusive) is harmless — the dedup index imports each
+  `(provider, external_activity_id)` once. (The first implementation sent the
+  cursor as Strava's `after` param, which would have re-fetched the same page
+  forever; fixed in M10c — see below.)
 - Tests (37): `test_strava_client.py` (request construction — endpoints,
   bearer/basic auth, after-cursor param, secrets-not-in-URL — and failure
   mapping: 401/429±Retry-After/400-detail/503/transport/non-JSON) via
