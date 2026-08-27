@@ -7,6 +7,21 @@ follows [Semantic Versioning](https://semver.org/) — see
 
 ## Unreleased
 
+- Provider integrations (opt-in, read-only, your own account only): connect a
+  Strava account from Profile → Connected accounts (OAuth 2.0, signed
+  state-bound callback) and disconnect it again. Activity sync from a
+  connected provider is still in progress. New API: `GET /providers`,
+  `GET /providers/{p}/connect`, `GET /providers/{p}/oauth/callback`,
+  `GET|DELETE /providers/{p}/connection`; new `PROVIDER_ERROR` (502) error
+  code. Configure with `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` (see
+  docs/installation.md); without them the stack runs exactly as before.
+- Identifier convention: every non-reference table has an int `id` primary
+  key; publicly identified rows additionally carry a `uuid` column that the
+  API exposes as the public `"id"` (API contract and URLs unchanged).
+- `activities` provenance: `source_format` is now nullable and describes the
+  file/export format only; provider-fetched rows carry `provider` +
+  `external_activity_id` (deduped by a partial unique index).
+
 ## 0.2.0 — 2026-08-25
 
 Hardening, operations, and schema conventions:

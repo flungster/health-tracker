@@ -6,11 +6,14 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import type {
   ActivitiesListView,
   ActivityDetailView,
+  ConnectUrlView,
   ProfileView,
+  ProviderConnectionView,
+  ProvidersView,
   SportsView,
   TrackpointsView,
   UserView,
@@ -159,6 +162,57 @@ export function useUpdateUser() {
     }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useProviders() {
+  return useQuery({
+    queryKey: ["providers"],
+    queryFn: () => apiRequest<ProvidersView>("/api/v1/providers"),
+  });
+}
+
+export function useProviderConnection(provider: string) {
+  return useQuery({
+    queryKey: ["provider-connection", provider],
+    queryFn: async () => {
+      try {
+        return await apiRequest<ProviderConnectionView>(
+          `/api/v1/providers/${provider}/connection`,
+        );
+      } catch (error) {
+        // 404 means "not connected", which is a normal state, not an error.
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+export function useConnectProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: string) =>
+      apiRequest<ConnectUrlView>(`/api/v1/providers/${provider}/connect`),
+    onSuccess: (data, provider) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
+      // Hand the browser to the provider. It redirects back to /profile with
+      // ?connected= or ?connect_error=, which the page reports to the user.
+      window.location.assign(data.url);
+    },
+  });
+}
+
+export function useDisconnectProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: string) =>
+      apiRequest<void>(`/api/v1/providers/${provider}/connection`, { method: "DELETE" }),
+    onSuccess: (_data, provider) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
     },
   });
 }

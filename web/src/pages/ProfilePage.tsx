@@ -1,18 +1,44 @@
-/** Profile: account info, heart-rate settings, and password change. */
+/** Profile: account info, connected accounts, heart-rate settings, password. */
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { useProfile, useUpdateProfile, useUpdateUser } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
+import ConnectedAccounts from "../components/ConnectedAccounts";
 import { Card, ErrorNote, Spinner } from "../components/Ui";
 import { inputClass, labelClass } from "../components/AuthShell";
-import { formatActivityDate } from "../format";
+import { capitalize, formatActivityDate } from "../format";
+
+function connectFailureReason(reason: string | null): string {
+  switch (reason) {
+    case "denied":
+      return "you declined the authorization.";
+    case "state":
+      return "the attempt expired or was interrupted. Try connecting again.";
+    default:
+      return "the provider could not complete the connection. Try again.";
+  }
+}
 
 export default function ProfilePage() {
   const { user } = useAuth();
   const { data: profile, isPending } = useProfile();
   const profileMutation = useUpdateProfile();
   const userMutation = useUpdateUser();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // One-shot OAuth results (?connected= / ?connect_error=) from the provider
+  // callback redirect: report them, then clear so a re-render can't re-report.
+  const connectedProvider = searchParams.get("connected");
+  const connectErrorProvider = searchParams.get("connect_error");
+  const connectReason = searchParams.get("reason");
+  useEffect(() => {
+    if (connectedProvider === null && connectErrorProvider === null) {
+      return;
+    }
+    setSearchParams({}, { replace: true });
+  }, [connectedProvider, connectErrorProvider, setSearchParams]);
 
   const [maxHr, setMaxHr] = useState<string>("");
   const [restingHr, setRestingHr] = useState<string>("");
@@ -55,6 +81,17 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-xl space-y-6">
       <h1 className="text-xl font-bold text-ink">Profile</h1>
 
+      {connectedProvider !== null && (
+        <div className="rounded-md border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-accent-dark">
+          {capitalize(connectedProvider)} connected.
+        </div>
+      )}
+      {connectErrorProvider !== null && (
+        <ErrorNote
+          message={`${capitalize(connectErrorProvider)} connection failed: ${connectFailureReason(connectReason)}`}
+        />
+      )}
+
       <Card className="p-5">
         <h2 className="text-base font-semibold text-ink">Account</h2>
         <dl className="mt-3 space-y-2 text-sm">
@@ -76,6 +113,8 @@ export default function ProfilePage() {
           </div>
         </dl>
       </Card>
+
+      <ConnectedAccounts />
 
       <Card className="p-5">
         <h2 className="text-base font-semibold text-ink">Heart-rate zones</h2>

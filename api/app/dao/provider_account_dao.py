@@ -34,6 +34,23 @@ class ProviderAccountDao(IntIdDao[ProviderAccount]):
         )
         return self.session.scalars(statement).unique().first()
 
+    def get_any_for_user(self, user_uuid: UUID, provider: str) -> ProviderAccount | None:
+        """The user's connection row for a provider, including soft-deleted.
+
+        ``UNIQUE (user_id, provider)`` spans all rows, so a reconnection must
+        reuse the existing (possibly deleted) row instead of inserting a new
+        one.
+        """
+        statement = select(ProviderAccount).where(
+            ProviderAccount.user_id == user_uuid,
+            ProviderAccount.provider == provider,
+        )
+        return self.session.scalars(statement).unique().first()
+
+    def save(self, account: ProviderAccount) -> None:
+        """Flush changes to an existing row. The caller commits the session."""
+        self.session.flush()
+
     def mark_deleted(self, user_uuid: UUID, provider: str) -> None:
         """Soft-delete the user's connection for a provider (no-op when absent)."""
         statement = (

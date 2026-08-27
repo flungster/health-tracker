@@ -21,6 +21,7 @@ to Done in the overview.
 | M9 | Identifier convention: int `id` PK + public `uuid` column | Done | 2026-08-26 |
 | M10a | Provider foundation: `providers` + `provider_accounts`, adapter contract, shared `import_parsed` | Done | 2026-08-26 |
 | M10b | Strava adapter: OAuth2 + v3 API client, JSON → ParsedActivity conversion | Done | 2026-08-26 |
+| M10c | Provider OAuth: connect/disconnect routes + callback, config wiring, profile UI | Done | 2026-08-26 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -29,6 +30,103 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M10c — Provider OAuth: connect/disconnect routes, config wiring, profile UI (2026-08-26)
+
+The connect half of the provider story: a user can now connect their own
+Strava account from the profile page and disconnect it again. Strictly
+opt-in and read-only; an instance without `STRAVA_CLIENT_ID`/`SECRET` is
+unaffected (Strava reads as "not configured", 404 on connect). Sync itself
+is M10d.
+
+**Gates:** `make lint` green (ruff, mypy 89 api files, tsc, eslint) · `make
+test` green (149 tests: 131 pre-existing + 18 new provider API tests) · api
++ web images rebuilt; live smoke passed (below).
+
+### Fix first: Strava backward pagination (M10b follow-up)
+- The M10b adapter sent the page cursor as Strava's `after` param. With
+  newest-first results, `after=<page's oldest>` re-returns the *same* newest
+  page — a sync walk over a full history would loop forever. The cursor is
+  now sent as `before` (fetch the *older* page), so the walk reaches history
+  and ends on a short page. Client, adapter, and both Strava test files
+  updated (separate commit).
+
+### Config wiring
+- `Settings` gains `public_base_url` (the browser-reachable base URL; builds
+  the OAuth redirect URI and the post-callback redirect) and the Strava app
+  settings: `strava_client_id`, `strava_client_secret`, `strava_redirect_uri`
+  (defaults to `{public_base_url}/api/v1/providers/strava/oauth/callback`),
+  `strava_scope` (default `activity:read_all` — read-only). `.env.example` +
+  compose env updated; `installation.md` gets the variables and a
+  "Connecting Strava" how-to.
+- `main.py::_build_provider_registry` registers an adapter per provider
+  whose credentials are present; the registry is process-wide on
+  `app.state` (adapters own their HTTP connection pools, like the engine).
+  Unconfigured provider → 404 "not available on this instance".
+
+### OAuth flow (state-bound user, redirect-based callback)
+- New token kind on `TokenService`: `issue_oauth_state` /
+  `verify_oauth_state` — a 10-minute JWT with a `purpose: oauth_state`
+  claim. The connect URL's `state` param carries it; the callback verifies
+  it, and **that is how the user is identified** — the callback is a plain
+  browser redirect and carries no Authorization header. A session JWT
+  presented as `state` is rejected (wrong purpose), as are forged/expired
+  ones.
+- `ProviderService` + routes under `/api/v1/providers`:
+  - `GET /providers` — reference rows + `configured` flag. First read path
+    on the `providers` reference table, so it got a `Provider` ORM model +
+    DAO (same pattern as `activity_types` in M7).
+  - `GET /providers/{p}/connect` — `{url}`: the authorize URL with state.
+  - `GET /providers/{p}/oauth/callback` — exchanges the code, upserts
+    `provider_accounts`, and 307s back to `/profile?connected={p}` or
+    `/profile?connect_error={p}&reason=denied|state|error` (a browser flow
+    cannot render a JSON error). The provider's `error=access_denied` maps
+    to `reason=denied`.
+  - `GET /providers/{p}/connection` — the connection view (provider,
+    external_user_id, display_name, connected_at, last_sync_at — tokens
+    never leave the API).
+  - `DELETE /providers/{p}/connection` — best-effort provider-side revoke
+    (failure is logged; the connection is dropped either way) + soft delete,
+    204.
+- Reconnection reuses the existing `(user, provider)` row: `UNIQUE
+  (user_id, provider)` spans soft-deleted rows, so a fresh insert would
+  collide. `ProviderAccountDao.get_any_for_user` +
+  `ProviderAccountMapper.apply_credentials` (refreshes tokens, reactivates,
+  resets `sync_cursor`/`last_sync_at` for a fresh full walk).
+- External id resolution: the token-response athlete id when present, else a
+  `fetch_identity` follow-up (keeps the NOT NULL column honest for other
+  providers).
+
+### Web UI (profile)
+- `ConnectedAccounts` card on the Profile page: per provider — connect
+  button (same-tab navigation to the authorize URL), connected state
+  (display name, connected date, "Not synced yet" until M10d), disconnect
+  with confirm, and "Not configured on this server" for unconfigured
+  providers.
+- One-shot OAuth result banner: `?connected=`/`?connect_error=` from the
+  callback redirect are reported, then cleared from the URL. The same-tab
+  hand-off makes the return a fresh page load, so no query-cache
+  invalidation is needed.
+- New hooks in `src/api/` (providers list, connection — a 404 reads as
+  "not connected", connect, disconnect); `types.ts` mirrors the views.
+
+### Tests (18 new, `tests/test_providers_api.py`)
+Registry swapped on `app.state` with a `StravaAdapter` over
+`httpx.MockTransport`: list (configured true/false, auth), connect URL
+params, unknown/unconfigured 404s, callback success (row stored; view shape
+with no token fields), invalid/missing state, session-JWT-as-state
+rejected, denial, exchange failure (all the `reason=` redirects),
+disconnect (204 → 404 after; the revoke request carried the refresh token),
+and reconnect reuses the row (`connected_at` survives).
+
+### Live smoke (rebuilt stack on :9090)
+Unconfigured: `/providers` → `configured:false`; connect → 404 envelope;
+callback with junk state → 307 `/profile?connect_error=strava&reason=state`;
+connection → 404; unauth → 401. Configured (dummy credentials, api
+recreated with env): `configured:true`, and the connect URL is the real
+Strava authorize endpoint carrying the configured client_id, the derived
+redirect_uri, the read-only scope, and a signed state. UI bundle serves the
+new card.
 
 ## M10b — Strava adapter: OAuth 2.0 + v3 API client, conversion (2026-08-26)
 

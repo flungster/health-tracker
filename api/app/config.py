@@ -37,6 +37,23 @@ class Settings(BaseSettings):
     # Per-minute auth limits per client IP (brute-force / spam protection).
     login_rate_limit_per_minute: int = 10
     register_rate_limit_per_minute: int = 5
+    # The URL the user's browser reaches this deployment at (e.g.
+    # http://localhost:9090). Used to build provider OAuth redirect URIs
+    # (when not set explicitly) and the redirect back into the app after
+    # the OAuth callback.
+    public_base_url: str = "http://localhost:9090"
+    # --- Provider (third-party account) configuration ---------------------
+    # Strava OAuth app credentials (developer.strava.com). When both are set
+    # (non-empty) the Strava adapter is registered and users can connect;
+    # otherwise Strava reads as "not configured" (404 on connect).
+    strava_client_id: str | None = None
+    strava_client_secret: str | None = None
+    # Where Strava sends the browser after authorization. Defaults to
+    # {public_base_url}/api/v1/providers/strava/oauth/callback.
+    strava_redirect_uri: str | None = None
+    # Scopes requested at connect time. Read-only by design: the app only
+    # ever pulls the connected user's own activities, never writes.
+    strava_scope: str = "activity:read_all"
 
 
 @lru_cache

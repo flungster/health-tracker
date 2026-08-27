@@ -90,12 +90,29 @@ synchronous `StravaClient` (transport only: builds requests, decodes JSON,
 maps 401/429/network failures onto `ProviderUpstreamError`) and the
 `StravaAdapter` (domain logic: OAuth code exchange/refresh, identity, paged
 activity ids, JSON → `ParsedActivity` conversion). The opaque sync cursor is
-the unix start-timestamp of the page's oldest activity; re-fetching the
+the unix start-timestamp of the page's oldest activity, sent as Strava's
+`before` parameter so the walk proceeds newest → oldest; re-fetching the
 boundary activity is harmless because the dedup index imports each
 `(provider, external_activity_id)` once. Conversion is null-safe (missing
 fields stay `None`, notable gaps become warnings), summary heart rate/cadence
 double as fallbacks when trackpoints carry no samples, and unknown Strava
 sport types map to `other` with a warning.
+
+**Connection flow (OAuth).** Adapters are registered at app startup only when
+their credentials are present in the environment (`_build_provider_registry`
+in `main.py`), so an unconfigured provider reads as 404, not as an error.
+`ProviderService` (with `ProviderAccountMapper`) drives the flow:
+`GET /providers/{p}/connect` issues a short-lived **signed state token**
+(`TokenService.issue_oauth_state`) that binds the flow to the caller, then
+returns the adapter's authorize URL. The browser round-trips through the
+provider and lands on `GET /providers/{p}/oauth/callback` — a plain browser
+redirect that carries **no** `Authorization` header, so the callback
+identifies the user through the state token (which also stops forged/crossed
+flows). A successful exchange upserts the `provider_accounts` row (reusing the
+single `(user, provider)` row, so reconnecting after a disconnect is clean);
+the response is a 307 redirect back to the app with `?connected=` /
+`?connect_error=`. `disconnect` revokes on the provider (best effort) and
+soft-deletes locally. No endpoint ever returns tokens.
 
 ### Errors
 

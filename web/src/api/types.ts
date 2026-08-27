@@ -134,3 +134,25 @@ export type SportTypeView = {
 export type SportsView = {
   sports: SportTypeView[];
 };
+
+export type ProviderInfoView = {
+  value: string;
+  description: string;
+  configured: boolean;
+};
+
+export type ProvidersView = {
+  providers: ProviderInfoView[];
+};
+
+export type ConnectUrlView = {
+  url: string;
+};
+
+export type ProviderConnectionView = {
+  provider: string;
+  external_user_id: string;
+  display_name: string | null;
+  connected_at: string;
+  last_sync_at: string | null;
+};

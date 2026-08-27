@@ -1,0 +1,93 @@
+"""Provider routes: connect and disconnect third-party accounts (OAuth).
+
+The OAuth callback is the one provider route without an Authorization
+header: it is a plain browser redirect coming from the provider, so the user
+is identified through the signed state token instead. Its outcome is
+conveyed by redirecting the browser back into the app (``?connected=`` or
+``?connect_error=``) — a browser flow cannot render a JSON error.
+"""
+
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import RedirectResponse, Response
+
+from app.config import Settings, get_settings
+from app.errors.app_error import NotFoundError, ProviderUpstreamError, ValidationError
+from app.http.dependencies import get_current_user, get_provider_service
+from app.models.user import User
+from app.schemas.mappers.provider_mapper import ProviderAccountMapper
+from app.schemas.views.provider_views import (
+    ConnectUrlView,
+    ProviderConnectionView,
+    ProvidersView,
+)
+from app.services.provider_service import ProviderService
+
+router = APIRouter(prefix="/api/v1/providers", tags=["providers"])
+
+
+@router.get("", response_model=ProvidersView)
+def list_providers(
+    provider_service: ProviderService = Depends(get_provider_service),
+    current_user: User = Depends(get_current_user),
+) -> ProvidersView:
+    """The known providers and whether each is configured on this instance."""
+    return ProvidersView(providers=provider_service.list_providers())
+
+
+@router.get("/{provider}/connect", response_model=ConnectUrlView)
+def connect(
+    provider: str,
+    provider_service: ProviderService = Depends(get_provider_service),
+    current_user: User = Depends(get_current_user),
+) -> ConnectUrlView:
+    """The provider authorization URL; the UI opens it in the user's browser."""
+    url = provider_service.get_connect_url(current_user.uuid, provider)
+    return ConnectUrlView(url=url)
+
+
+@router.get("/{provider}/oauth/callback")
+def oauth_callback(
+    provider: str,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    settings: Settings = Depends(get_settings),
+    provider_service: ProviderService = Depends(get_provider_service),
+) -> RedirectResponse:
+    """The provider's OAuth redirect target (browser, no JWT).
+
+    Success and failure both end in a redirect back to the app's profile
+    page, which reports the outcome to the user.
+    """
+    base = settings.public_base_url.rstrip("/")
+    if error is not None:
+        return RedirectResponse(f"{base}/profile?connect_error={provider}&reason=denied")
+    try:
+        provider_service.handle_oauth_callback(provider, code, state)
+    except ValidationError:
+        return RedirectResponse(f"{base}/profile?connect_error={provider}&reason=state")
+    except (NotFoundError, ProviderUpstreamError):
+        return RedirectResponse(f"{base}/profile?connect_error={provider}&reason=error")
+    return RedirectResponse(f"{base}/profile?connected={provider}")
+
+
+@router.get("/{provider}/connection", response_model=ProviderConnectionView)
+def get_connection(
+    provider: str,
+    provider_service: ProviderService = Depends(get_provider_service),
+    current_user: User = Depends(get_current_user),
+) -> ProviderConnectionView:
+    """The user's connection for a provider (no tokens, ever)."""
+    account = provider_service.get_connection(current_user.uuid, provider)
+    return ProviderAccountMapper.to_view(account)
+
+
+@router.delete("/{provider}/connection", status_code=204)
+def disconnect_connection(
+    provider: str,
+    provider_service: ProviderService = Depends(get_provider_service),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Disconnect a provider: revoke on the provider side, drop locally."""
+    provider_service.disconnect(current_user.uuid, provider)
+    return Response(status_code=204)

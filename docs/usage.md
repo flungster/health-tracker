@@ -87,12 +87,30 @@ consistent zones across all activities.
 
 ## Profile
 
-The **Profile** page has three parts:
+The **Profile** page has four parts:
 
 - **Account** — your name, email, and join date.
+- **Connected accounts** — connect or disconnect a third-party service (e.g.
+  Strava) so your activities can be pulled from it.
 - **Heart-rate zones** — set your max and resting heart rate (bpm). This drives
   the zone chart on every activity.
 - **Change password** — verify your current password and set a new one.
+
+## Connected accounts
+
+A **connected account** links one of *your own* third-party profiles (e.g.
+Strava) to your local account. The app reads only your own activities and
+never writes to the service. Everything imported still lands in your local
+data, where it is yours to keep.
+
+- **Connect** — on the Profile page, click **Connect** for a service. You are
+  sent to the service's authorization page; approve it and you are returned
+  here with a confirmation. Only services configured by your server
+  administrator appear as connectable — others show as "Not configured on
+  this server."
+- **Disconnect** — click **Disconnect** on a connected service. This revokes
+  the connection at the service and stops it from being used. Activities you
+  already imported remain in your data.
 
 ## Managing activities
 

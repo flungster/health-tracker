@@ -47,6 +47,7 @@ Errors always have this shape:
 | 422 | `VALIDATION_ERROR` | Business-level validation failed (e.g. changing a password without the current one, an oversized upload). |
 | 422 | `IMPORT_ERROR` | The uploaded file could not be parsed (wrong format, corrupt, no trackpoints, too many trackpoints). |
 | 429 | `RATE_LIMITED` | Too many login/register attempts from this IP within a minute. The response carries a `Retry-After` header (seconds). |
+| 502 | `PROVIDER_ERROR` | A provider's API failed or rejected a request (network failure, rate limit, rejected credentials). |
 | 500 | `INTERNAL_ERROR` | Anything unexpected. |
 
 Note: malformed request *bodies* (wrong JSON schema) are rejected by FastAPI
@@ -389,3 +390,73 @@ display. No auth required.
   ]
 }
 ```
+
+## Providers
+
+Third-party account connections (Strava is the first; more providers follow
+the same shape). A connection links **one of the caller's own** external
+profiles to the local account so the app can pull that user's activities.
+Tokens are stored server-side and never returned by any endpoint.
+
+### `GET /providers`
+
+All known providers (reference data) with a `configured` flag: whether this
+instance has the provider's credentials set and can accept connections.
+Bearer auth required.
+
+```json
+{
+  "providers": [
+    { "value": "strava", "description": "Strava", "configured": true }
+  ]
+}
+```
+
+### `GET /providers/{provider}/connect`
+
+Starts an OAuth connection. Returns the provider authorization URL to open
+in the user's browser. The URL carries a short-lived signed `state` token
+that binds the flow to the caller. Response `200`:
+
+```json
+{ "url": "https://www.strava.com/oauth/authorize?client_id=…&state=…" }
+```
+
+`404 NOT_FOUND` when the provider is unknown or not configured on this
+instance.
+
+### `GET /providers/{provider}/oauth/callback`
+
+The provider's OAuth redirect target. **No bearer auth** — this is a plain
+browser redirect coming back from the provider, so the user is identified
+through the signed `state` token instead. Query params: `code`, `state`, and
+`error` (when the user declined). The response is always a **307 redirect**
+back to the app's profile page:
+
+- success → `{base}/profile?connected={provider}`
+- declined → `{base}/profile?connect_error={provider}&reason=denied`
+- bad/expired state → `…&reason=state`
+- any other failure → `…&reason=error`
+
+### `GET /providers/{provider}/connection`
+
+The caller's connection for a provider, if any. `404 NOT_FOUND` when there
+is none. Response `200` (token fields excluded by design):
+
+```json
+{
+  "provider": "strava",
+  "external_user_id": "12345",
+  "display_name": "Alice Doe",
+  "connected_at": "2026-08-26T12:00:00Z",
+  "last_sync_at": null
+}
+```
+
+`last_sync_at` is `null` until the first activity sync completes.
+
+### `DELETE /providers/{provider}/connection`
+
+Disconnects: revokes the credentials on the provider (best effort) and
+soft-deletes the local connection. Response `204`. `404 NOT_FOUND` when there
+is no connection to disconnect.

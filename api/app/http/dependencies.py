@@ -14,6 +14,8 @@ from app.dao.activity_hr_zone_dao import ActivityHrZoneDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_type_dao import ActivityTypeDao
+from app.dao.provider_account_dao import ProviderAccountDao
+from app.dao.provider_dao import ProviderDao
 from app.dao.sport_activity_dao import (
     CyclingActivityDao,
     RowingActivityDao,
@@ -27,12 +29,14 @@ from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import AuthenticationError
 from app.imports import build_default_detector
 from app.models.user import User
+from app.providers.registry import ProviderRegistry
 from app.security.passwords import PasswordService
 from app.security.tokens import TokenService
 from app.services.activity_service import ActivityService
 from app.services.activity_stats import ActivityStatistics
 from app.services.auth_service import AuthService
 from app.services.import_service import ImportService
+from app.services.provider_service import ProviderService
 from app.services.sport_service import SportService
 from app.services.user_service import UserService
 
@@ -115,6 +119,30 @@ def get_user_service(
         user_dao=UserDao(session),
         profile_dao=UserProfileDao(session),
         password_service=password_service,
+    )
+
+
+def get_provider_registry(request: Request) -> ProviderRegistry:
+    """The process-wide provider registry, built at app startup."""
+    # ``app.state`` is Starlette's untyped attribute bag (Any), so bind it
+    # to the concrete type here.
+    registry: ProviderRegistry = request.app.state.provider_registry
+    return registry
+
+
+def get_provider_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+    registry: ProviderRegistry = Depends(get_provider_registry),
+    token_service: TokenService = Depends(get_token_service),
+) -> ProviderService:
+    """ProviderService bound to the request unit of work and the registry."""
+    session: Session = unit_of_work.session
+    return ProviderService(
+        unit_of_work,
+        account_dao=ProviderAccountDao(session),
+        provider_dao=ProviderDao(session),
+        registry=registry,
+        token_service=token_service,
     )
 
 
