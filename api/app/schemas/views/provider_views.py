@@ -41,3 +41,16 @@ class ProviderConnectionView(BaseModel):
     display_name: str | None
     connected_at: datetime
     last_sync_at: datetime | None
+
+
+class SyncResultView(BaseModel):
+    """The outcome of one sync run.
+
+    ``skipped`` counts activities already imported (deduped); a large
+    history may span several runs (the stored cursor resumes where the
+    previous one stopped), so counts are per run, not per connection.
+    """
+
+    imported: int
+    skipped: int
+    last_sync_at: datetime

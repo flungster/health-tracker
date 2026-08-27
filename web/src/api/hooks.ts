@@ -15,6 +15,7 @@ import type {
   ProviderConnectionView,
   ProvidersView,
   SportsView,
+  SyncResultView,
   TrackpointsView,
   UserView,
 } from "./types";
@@ -213,6 +214,18 @@ export function useDisconnectProvider() {
       apiRequest<void>(`/api/v1/providers/${provider}/connection`, { method: "DELETE" }),
     onSuccess: (_data, provider) => {
       void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
+    },
+  });
+}
+
+export function useSyncProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: string) =>
+      apiRequest<SyncResultView>(`/api/v1/providers/${provider}/sync`, { method: "POST" }),
+    onSuccess: (_data, provider) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
+      void queryClient.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 }

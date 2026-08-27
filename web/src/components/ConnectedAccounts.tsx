@@ -1,6 +1,14 @@
 /** Connected third-party accounts (provider connections) on the profile page. */
 
-import { useConnectProvider, useDisconnectProvider, useProviderConnection, useProviders } from "../api/hooks";
+import { useState } from "react";
+
+import {
+  useConnectProvider,
+  useDisconnectProvider,
+  useProviderConnection,
+  useProviders,
+  useSyncProvider,
+} from "../api/hooks";
 import type { ProviderInfoView } from "../api/types";
 import { formatActivityDate } from "../format";
 import { Card, ErrorNote, Spinner } from "./Ui";
@@ -37,6 +45,8 @@ function ProviderRow({ provider }: { provider: ProviderInfoView }) {
   );
   const connect = useConnectProvider();
   const disconnect = useDisconnectProvider();
+  const sync = useSyncProvider();
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   if (!provider.configured) {
     return (
@@ -95,26 +105,48 @@ function ProviderRow({ provider }: { provider: ProviderInfoView }) {
               : " · Not synced yet"}
           </p>
         </div>
-        <button
-          type="button"
-          disabled={disconnect.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `Disconnect ${provider.description}? Their activities stay in your data.`,
-              )
-            ) {
-              disconnect.mutate(provider.value);
-            }
-          }}
-          className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold text-ink transition-colors hover:bg-line/40 disabled:opacity-60"
-        >
-          {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={sync.isPending || disconnect.isPending}
+            onClick={() => {
+              setSyncMessage(null);
+              sync.mutate(provider.value, {
+                onSuccess: (data) =>
+                  setSyncMessage(
+                    data.imported > 0
+                      ? `Imported ${data.imported} new activit${data.imported === 1 ? "y" : "ies"}.`
+                      : "All up to date.",
+                  ),
+              });
+            }}
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-accent-dark disabled:opacity-60"
+          >
+            {sync.isPending ? "Syncing…" : "Sync"}
+          </button>
+          <button
+            type="button"
+            disabled={sync.isPending || disconnect.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Disconnect ${provider.description}? Their activities stay in your data.`,
+                )
+              ) {
+                disconnect.mutate(provider.value);
+              }
+            }}
+            className="rounded-md border border-line px-3 py-1.5 text-sm font-semibold text-ink transition-colors hover:bg-line/40 disabled:opacity-60"
+          >
+            {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
+          </button>
+        </div>
       </li>
-      {disconnect.isError && (
-        <li>
-          <ErrorNote message={disconnect.error.message} />
+      {(syncMessage !== null || sync.isError || disconnect.isError) && (
+        <li className="space-y-2">
+          {syncMessage !== null && <p className="text-sm text-accent-dark">{syncMessage}</p>}
+          {sync.isError && <ErrorNote message={sync.error.message} />}
+          {disconnect.isError && <ErrorNote message={disconnect.error.message} />}
         </li>
       )}
     </>

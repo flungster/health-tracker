@@ -114,6 +114,28 @@ the response is a 307 redirect back to the app with `?connected=` /
 `?connect_error=`. `disconnect` revokes on the provider (best effort) and
 soft-deletes locally. No endpoint ever returns tokens.
 
+**Sync.** `ProviderSyncService` (route `POST /providers/{p}/sync`) pulls a
+connection's new activities:
+
+- It ensures a live access token — refreshing through the adapter (and
+  persisting the rotated pair) when the cached one is expired — then walks
+  the provider's activity list from the stored `sync_cursor`, newest → older,
+  one adapter page per call.
+- Every page id is checked against the global
+  `(provider, external_activity_id)` dedup (an `ActivityDao` existence check
+  mirroring the partial unique index); only unseen ids are fetched in full and
+  imported through the shared `ImportService.import_parsed` path, so provider
+  activities are ordinary `activities` rows with provider provenance.
+- The cursor is checkpointed (committed) after each full page. A run that
+  finishes the walk clears the cursor; a run that hits the per-run page cap
+  (`MAX_SYNC_PAGES`) or a provider failure (rate limit, 5xx) keeps it, so the
+  next run resumes where this one stopped. `last_sync_at` is stamped when a
+  run completes.
+- Rate limits surface as 502 `PROVIDER_ERROR` with a `Retry-After` header (the
+  error handler sets it for any `AppError` carrying `retry_after_seconds`).
+  Syncs are user-triggered; a scheduled background sync would reuse the same
+  service.
+
 ### Errors
 
 Services/DAOs raise `AppError` subclasses (`AuthenticationError`,

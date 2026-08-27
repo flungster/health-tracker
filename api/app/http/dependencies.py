@@ -37,6 +37,7 @@ from app.services.activity_stats import ActivityStatistics
 from app.services.auth_service import AuthService
 from app.services.import_service import ImportService
 from app.services.provider_service import ProviderService
+from app.services.provider_sync_service import ProviderSyncService
 from app.services.sport_service import SportService
 from app.services.user_service import UserService
 
@@ -143,6 +144,22 @@ def get_provider_service(
         provider_dao=ProviderDao(session),
         registry=registry,
         token_service=token_service,
+    )
+
+
+def get_provider_sync_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+    registry: ProviderRegistry = Depends(get_provider_registry),
+    import_service: ImportService = Depends(get_import_service),
+) -> ProviderSyncService:
+    """ProviderSyncService bound to the request unit of work and the registry."""
+    session: Session = unit_of_work.session
+    return ProviderSyncService(
+        unit_of_work,
+        account_dao=ProviderAccountDao(session),
+        activity_dao=ActivityDao(session),
+        registry=registry,
+        import_service=import_service,
     )
 
 

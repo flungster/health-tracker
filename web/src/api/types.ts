@@ -156,3 +156,9 @@ export type ProviderConnectionView = {
   connected_at: string;
   last_sync_at: string | null;
 };
+
+export type SyncResultView = {
+  imported: number;
+  skipped: number;
+  last_sync_at: string;
+};

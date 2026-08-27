@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.errors.app_error import AppError, RateLimitExceededError
+from app.errors.app_error import AppError, ProviderUpstreamError, RateLimitExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +20,27 @@ def _error_body(code: str, message: str, details: list[str]) -> dict[str, object
     return {"error": {"code": code, "message": message, "details": details}}
 
 
+def _retry_after_seconds(exc: AppError) -> int | None:
+    """Seconds a client should wait before retrying, when the error says so.
+
+    Set for our own rate limiting and when a provider asked us to slow down.
+    """
+    if isinstance(exc, RateLimitExceededError):
+        return exc.retry_after_seconds
+    if isinstance(exc, ProviderUpstreamError):
+        return exc.retry_after_seconds
+    return None
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """Attach the error envelope handlers to the application."""
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         headers: dict[str, str] | None = None
-        if isinstance(exc, RateLimitExceededError):
-            headers = {"Retry-After": str(exc.retry_after_seconds)}
+        retry_after = _retry_after_seconds(exc)
+        if retry_after is not None:
+            headers = {"Retry-After": str(retry_after)}
         return JSONResponse(
             status_code=exc.status_code,
             content=_error_body(exc.code, exc.message, exc.details),

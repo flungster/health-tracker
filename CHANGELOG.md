@@ -9,12 +9,14 @@ follows [Semantic Versioning](https://semver.org/) — see
 
 - Provider integrations (opt-in, read-only, your own account only): connect a
   Strava account from Profile → Connected accounts (OAuth 2.0, signed
-  state-bound callback) and disconnect it again. Activity sync from a
-  connected provider is still in progress. New API: `GET /providers`,
-  `GET /providers/{p}/connect`, `GET /providers/{p}/oauth/callback`,
-  `GET|DELETE /providers/{p}/connection`; new `PROVIDER_ERROR` (502) error
-  code. Configure with `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` (see
-  docs/installation.md); without them the stack runs exactly as before.
+  state-bound callback), sync your activities from it (first sync imports the
+  full history; later syncs add only what is new), and disconnect it again.
+  New API: `GET /providers`, `GET /providers/{p}/connect`,
+  `GET /providers/{p}/oauth/callback`, `GET|DELETE /providers/{p}/connection`,
+  `POST /providers/{p}/sync`; new `PROVIDER_ERROR` (502) error code (carries
+  `Retry-After` when the provider rate-limits). Configure with
+  `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` (see docs/installation.md);
+  without them the stack runs exactly as before.
 - Identifier convention: every non-reference table has an int `id` primary
   key; publicly identified rows additionally carry a `uuid` column that the
   API exposes as the public `"id"` (API contract and URLs unchanged).

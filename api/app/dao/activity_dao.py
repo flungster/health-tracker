@@ -54,6 +54,20 @@ class ActivityDao(IntIdUuidDao[Activity]):
         )
         return int(self.session.scalars(statement).one())
 
+    def exists_for_provider(self, provider: str, external_activity_id: str) -> bool:
+        """Whether this provider activity was imported (by any user).
+
+        Deliberately not user-scoped and not filtered on ``deleted_at``: it
+        mirrors the global partial unique index on
+        ``(provider, external_activity_id)``, which is the backstop the sync
+        loop relies on (an external id imports at most once, full stop).
+        """
+        statement = select(Activity.id).where(
+            Activity.provider == provider,
+            Activity.external_activity_id == external_activity_id,
+        )
+        return self.session.scalars(statement).first() is not None
+
     def update(
         self,
         activity: Activity,

@@ -460,3 +460,27 @@ is none. Response `200` (token fields excluded by design):
 Disconnects: revokes the credentials on the provider (best effort) and
 soft-deletes the local connection. Response `204`. `404 NOT_FOUND` when there
 is no connection to disconnect.
+
+### `POST /providers/{provider}/sync`
+
+Pulls the user's new activities from the connected provider. The sync walks
+the provider's activity list (newest → older) and imports every activity not
+imported before — re-syncing only pulls what is new. Response `200`:
+
+```json
+{
+  "imported": 3,
+  "skipped": 12,
+  "last_sync_at": "2026-08-26T12:00:00Z"
+}
+```
+
+`imported`/`skipped` count this run only. A very large history may span
+several runs: each run resumes from the stored cursor, so repeat the call
+until `imported` and `skipped` cover the rest. The access token is
+transparently refreshed (and its rotation persisted) when it has expired.
+
+`404 NOT_FOUND` when there is no connection (or the provider is not
+configured). Provider failures return `502 PROVIDER_ERROR`; when the
+provider rate-limited, the response carries a `Retry-After` header (seconds)
+and the run resumes from its cursor next time.

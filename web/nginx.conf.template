@@ -17,6 +17,9 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # A provider sync makes many sequential upstream calls in one request;
+        # allow it to run past nginx's default 60s read timeout.
+        proxy_read_timeout 300s;
         # Backstop for the API's own MAX_UPLOAD_MB limit (built from the same
         # value). The API returns the detailed error for real uploads.
         client_max_body_size __MAX_UPLOAD_MB__m;

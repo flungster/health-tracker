@@ -22,6 +22,7 @@ to Done in the overview.
 | M10a | Provider foundation: `providers` + `provider_accounts`, adapter contract, shared `import_parsed` | Done | 2026-08-26 |
 | M10b | Strava adapter: OAuth2 + v3 API client, JSON → ParsedActivity conversion | Done | 2026-08-26 |
 | M10c | Provider OAuth: connect/disconnect routes + callback, config wiring, profile UI | Done | 2026-08-26 |
+| M10d | Provider sync: paged activity walk, dedup, cursor resume, token refresh, sync API + UI | Done | 2026-08-26 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -30,6 +31,74 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M10d — Provider sync: pull a connected user's activities (2026-08-26)
+
+The sync half of the provider story: a user can now pull their own activities
+from a connected provider. A sync is a paged walk of the provider's activity
+list (newest → older) that imports only what is new and resumes across runs.
+This completes the provider integration (M10a–M10d).
+
+**Gates:** `make lint` green (ruff, mypy 90 api files, tsc, eslint) · `make
+test` green (158 tests: 149 pre-existing + 9 new sync tests) · api + web
+images rebuilt; live smoke passed (health, sync 401/404 paths, UI sync
+button).
+
+### Sync service
+- `ProviderSyncService` + `POST /providers/{p}/sync` (`SyncResultView`:
+  `imported`, `skipped`, `last_sync_at`):
+  - **Token handling** — when the cached access token is expired (or within a
+    60s buffer), it is refreshed through the adapter and the **rotated pair
+    is persisted** before the walk (Strava rotates refresh tokens; the latest
+    is stored). A fresh token is used as-is.
+  - **Paged walk** — walks from the stored `sync_cursor` (`None` = start at
+    the newest), one adapter page per call. Every page id is checked against
+    the global `(provider, external_activity_id)` dedup via a new
+    `ActivityDao.exists_for_provider` (mirrors the partial unique index: not
+    user-scoped, includes soft-deleted, exactly what the index enforces);
+    unseen ids are fetched in full and imported through the shared
+    `ImportService.import_parsed` (provider provenance, no file).
+  - **Checkpointing and resume** — the cursor is committed after each full
+    page. A run that finishes the walk clears the cursor and stamps
+    `last_sync_at`; a run that hits the per-run cap (`MAX_SYNC_PAGES = 25`)
+    or a provider failure keeps the cursor so the next run resumes where this
+    one stopped. `last_sync_at` is stamped only when a run completes.
+- **Rate limits** — `ProviderUpstreamError.retry_after_seconds` now yields a
+  `Retry-After` header in the error envelope (the handler was generalized
+  from the auth limiter's case). A 429 mid-walk stops the run, keeps the
+  cursor, and tells the client when to retry.
+- **nginx** — `proxy_read_timeout 300s` on `/api/` (a sync is one long
+  request making many sequential provider calls; the default 60s would cut
+  it off).
+
+### Web UI
+- Connected rows gain a **Sync** button (beside Disconnect): shows the
+  per-run result ("Imported N new activities." / "All up to date.") or the
+  API error on failure; the row's "Last synced" updates via query
+  invalidation, and the activities feed is invalidated so new activities
+  appear immediately.
+
+### Tests (9 new, `tests/test_providers_sync.py`)
+A stateful mock Strava over `httpx.MockTransport` that honors the `before`
+cursor like the real API; a connected user is seeded via a direct session:
+- Full history (2 pages, 102 activities) imports on the first sync: counts,
+  feed total, cursor cleared, `last_sync_at` stamped, provider provenance
+  (no `source_format`, external id recorded), 102 distinct detail fetches.
+- Re-sync skips all 102 (0 imported).
+- Partial run (page cap = 1) checkpoints the cursor; the next run resumes
+  from it and finishes.
+- Expired token → refresh (rotation persisted, fresh token used thereafter);
+  fresh token → no refresh.
+- Rate limit mid-walk (429 + Retry-After) → 502 `PROVIDER_ERROR` with a
+  `Retry-After: 30` header, page 1 imported, cursor kept, `last_sync_at`
+  untouched.
+- 404 without a connection, 404 with a connection but unconfigured provider,
+  401 unauthenticated.
+
+### Live smoke (rebuilt stack on :9090)
+Health ok; sync unauth 401; sync without a connection 404 `NOT_FOUND`; UI
+bundle serves the Sync button. (The full sync walk is covered by the
+mock-transport tests; a real round-trip needs a user's Strava credentials.)
 
 ## M10c — Provider OAuth: connect/disconnect routes, config wiring, profile UI (2026-08-26)
 

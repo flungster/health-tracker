@@ -91,7 +91,7 @@ The **Profile** page has four parts:
 
 - **Account** — your name, email, and join date.
 - **Connected accounts** — connect or disconnect a third-party service (e.g.
-  Strava) so your activities can be pulled from it.
+  Strava) and sync your activities from it.
 - **Heart-rate zones** — set your max and resting heart rate (bpm). This drives
   the zone chart on every activity.
 - **Change password** — verify your current password and set a new one.
@@ -108,6 +108,10 @@ data, where it is yours to keep.
   here with a confirmation. Only services configured by your server
   administrator appear as connectable — others show as "Not configured on
   this server."
+- **Sync** — click **Sync** on a connected service to pull your activities
+  from it. The first sync imports your whole history; later syncs only add
+  what is new (the row shows when it was last synced). A very large history
+  may take more than one sync — just run it again.
 - **Disconnect** — click **Disconnect** on a connected service. This revokes
   the connection at the service and stops it from being used. Activities you
   already imported remain in your data.

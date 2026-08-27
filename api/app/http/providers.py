@@ -12,15 +12,21 @@ from fastapi.responses import RedirectResponse, Response
 
 from app.config import Settings, get_settings
 from app.errors.app_error import NotFoundError, ProviderUpstreamError, ValidationError
-from app.http.dependencies import get_current_user, get_provider_service
+from app.http.dependencies import (
+    get_current_user,
+    get_provider_service,
+    get_provider_sync_service,
+)
 from app.models.user import User
 from app.schemas.mappers.provider_mapper import ProviderAccountMapper
 from app.schemas.views.provider_views import (
     ConnectUrlView,
     ProviderConnectionView,
     ProvidersView,
+    SyncResultView,
 )
 from app.services.provider_service import ProviderService
+from app.services.provider_sync_service import ProviderSyncService
 
 router = APIRouter(prefix="/api/v1/providers", tags=["providers"])
 
@@ -91,3 +97,18 @@ def disconnect_connection(
     """Disconnect a provider: revoke on the provider side, drop locally."""
     provider_service.disconnect(current_user.uuid, provider)
     return Response(status_code=204)
+
+
+@router.post("/{provider}/sync", response_model=SyncResultView)
+def sync_provider(
+    provider: str,
+    provider_sync_service: ProviderSyncService = Depends(get_provider_sync_service),
+    current_user: User = Depends(get_current_user),
+) -> SyncResultView:
+    """Pull the user's new activities from a connected provider.
+
+    A large history may span several runs; each run resumes from the stored
+    cursor. Provider failures return the 502 ``PROVIDER_ERROR`` envelope,
+    with a ``Retry-After`` header when the provider rate-limited.
+    """
+    return provider_sync_service.sync(current_user.uuid, provider)
