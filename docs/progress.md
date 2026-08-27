@@ -20,6 +20,7 @@ to Done in the overview.
 | M8 | Reference tables: `source_formats` + `split_units` | Done | 2026-08-25 |
 | M9 | Identifier convention: int `id` PK + public `uuid` column | Done | 2026-08-26 |
 | M10a | Provider foundation: `providers` + `provider_accounts`, adapter contract, shared `import_parsed` | Done | 2026-08-26 |
+| M10b | Strava adapter: OAuth2 + v3 API client, JSON → ParsedActivity conversion | Done | 2026-08-26 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -28,6 +29,65 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M10b — Strava adapter: OAuth 2.0 + v3 API client, conversion (2026-08-26)
+
+The first provider adapter, built strictly against the M10a contract — no
+routes, no UI, no config wiring yet (those are M10c–M10d). Strava is a
+reference implementation: a later provider (Garmin, Polar, ...) is a new
+`providers/<name>/` subpackage, not core changes.
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(131 tests: 94 pre-existing + 37 new Strava tests) · api image rebuilt and
+smoke passed · adapter verified importable in the running container.
+
+- New `app/providers/strava/` package:
+  - `StravaClient` — thin synchronous `httpx` client for the v3 endpoints
+    (`/oauth/token`, `/oauth/revoke`, `/athlete`, `/athlete/activities`,
+    `/activities/{id}`). Transport only: no domain logic. Maps 401 →
+    "re-authorize" error, 429 → `ProviderUpstreamError` carrying
+    `retry_after_seconds` (from `Retry-After`), other 4xx/5xx → error with
+    the provider's `detail`/`message`, and network failures / non-JSON
+    bodies → `ProviderUpstreamError`. Tokens travel in headers/form fields
+    only — never in URLs, logs, or exceptions.
+  - `StravaAdapter` — implements `ProviderAdapter`: builds the authorize URL
+    (client_id, redirect_uri, scope, response_type=code, state), maps the
+    `/oauth/token` response to `ProviderCredentials` (validates required
+    fields, unix `expires_at` → UTC datetime, athlete → external id +
+    display name), refresh (the refresh token **rotates** — the latest is
+    returned), identity, paged activity ids, and full-activity conversion.
+  - `convert.py` — pure Strava JSON → `ParsedActivity`. Null-safe; missing
+    fields stay `None`. Summary HR/cadence double as fallbacks when
+    trackpoints carry no samples; 0 distance/calories/elevation → `None`;
+    trackpoint `time` (a seconds offset from start) → absolute UTC;
+    negative longitudes preserved.
+- Sport mapping (Strava `sport_type` → `activity_types.value`): 27 Strava
+  types mapped (Running/TrailRun/VirtualRun/Canicross → running; Cycling and
+  variants → cycling; Rowing → rowing; Yoga/Pilates → yoga; Strength/Gym/
+  WeightLifting/Crossfit/Kickboxing/MartialArts → strength; Swim/
+  OpenWaterSwim → swimming; Walking → walking; Hike/Hiking → hiking).
+  Anything unmapped → `other` with a warning.
+- `ProviderUpstreamError` gained `retry_after_seconds` so the M10d sync loop
+  can back off on rate limits instead of hammering Strava.
+- `httpx` promoted from a dev dependency to a runtime dependency (providers
+  make outbound HTTPS calls).
+- `ActivityStatistics` now falls back to `ParsedActivity.cadence_avg_rpm`
+  when trackpoints carry no cadence samples (mirroring the existing HR
+  fallback). No-op for file imports (parsers never set it); pins the
+  contract the provider path relies on.
+- Cursor semantics: the opaque `sync_cursor` is the unix start-timestamp of
+  the page's oldest activity; a full (100) page advances it, a short/empty
+  page ends the walk. Re-fetching the boundary activity (if Strava treats
+  `after` as inclusive) is harmless — the dedup index imports each
+  `(provider, external_activity_id)` once.
+- Tests (37): `test_strava_client.py` (request construction — endpoints,
+  bearer/basic auth, after-cursor param, secrets-not-in-URL — and failure
+  mapping: 401/429±Retry-After/400-detail/503/transport/non-JSON) via
+  `httpx.MockTransport`; `test_strava_adapter.py` (authorize URL params,
+  code exchange + field validation, refresh rotation, identity, revoke,
+  id-page cursor advance/stop, and fixture-driven conversion for running /
+  rowing / strength / unknown-sport / opt-out-HR / minimal / malformed
+  trackpoints); `test_activity_stats.py` (summary-fallback contract).
 
 ## M10a — Provider foundation: schema, adapter contract, shared import path (2026-08-26)
 

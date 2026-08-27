@@ -85,6 +85,18 @@ provider-fetched activities) flow through the same `import_parsed` path and
 land as ordinary `activities` rows, distinguished by their provenance
 (`source_format` for files, `provider` + `external_activity_id` for fetched).
 
+The first adapter is **Strava** (`providers/strava/`), split into a thin
+synchronous `StravaClient` (transport only: builds requests, decodes JSON,
+maps 401/429/network failures onto `ProviderUpstreamError`) and the
+`StravaAdapter` (domain logic: OAuth code exchange/refresh, identity, paged
+activity ids, JSON → `ParsedActivity` conversion). The opaque sync cursor is
+the unix start-timestamp of the page's oldest activity; re-fetching the
+boundary activity is harmless because the dedup index imports each
+`(provider, external_activity_id)` once. Conversion is null-safe (missing
+fields stay `None`, notable gaps become warnings), summary heart rate/cadence
+double as fallbacks when trackpoints carry no samples, and unknown Strava
+sport types map to `other` with a warning.
+
 ### Errors
 
 Services/DAOs raise `AppError` subclasses (`AuthenticationError`,

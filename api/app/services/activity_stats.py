@@ -93,6 +93,8 @@ class ActivityStatistics:
         cadences = [p.cadence_rpm for p in points if p.cadence_rpm]
         if cadences:
             stats.cadence_avg_rpm = round(sum(cadences) / len(cadences))
+        else:
+            stats.cadence_avg_rpm = activity.cadence_avg_rpm
 
         stats.splits = self.compute_splits(points, SplitUnit.KM, KM_METERS)
         stats.splits.extend(self.compute_splits(points, SplitUnit.MI, MILE_METERS))

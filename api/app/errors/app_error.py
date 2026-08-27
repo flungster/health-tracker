@@ -66,11 +66,22 @@ class ProviderUpstreamError(AppError):
     """A provider's API failed or rejected the request (HTTP 502).
 
     Raised by provider adapters for network failures, provider-side errors,
-    and invalid or revoked credentials.
+    and invalid or revoked credentials. Carries ``retry_after_seconds`` when
+    the provider asked us to slow down (rate limit), so sync loops can back
+    off instead of hammering.
     """
 
     status_code = 502
     code = "PROVIDER_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        details: list[str] | None = None,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(message, details)
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ActivityImportError(AppError):

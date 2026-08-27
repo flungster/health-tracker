@@ -17,12 +17,14 @@ dependencies = [
     "gpxpy>=1.6.2",
     "fitdecode>=0.11",
     "python-multipart>=0.0.20",
+    # Provider adapters (Strava) make outbound HTTPS calls to the user's
+    # connected third-party accounts.
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.28",
     "mypy>=1.17",
     "ruff>=0.12",
 ]
