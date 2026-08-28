@@ -8,7 +8,8 @@ Create an account, import activity files (GPX, TCX, FIT) from your watch or
 phone, and view your activities — routes, splits, heart rate, calories — in a
 clean web UI. No cloud services involved.
 
-> Status: **v0.2.0** — accounts, GPX/TCX/FIT import, and a full activity UI.
+> Status: **v0.3.0** — accounts, GPX/TCX/FIT import, a full activity UI, and
+> opt-in activity sync from a connected Strava account.
 > See
 > `docs/` for detailed documentation and `AGENTS.md` for architecture rules
 > and the milestone plan.

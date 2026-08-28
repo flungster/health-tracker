@@ -5,7 +5,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [Semantic Versioning](https://semver.org/) — see
 [docs/release.md](docs/release.md) for the release process.
 
-## Unreleased
+## 0.3.0 — 2026-08-26
+
+Provider integrations, and internal identifier + provenance conventions:
 
 - Provider integrations (opt-in, read-only, your own account only): connect a
   Strava account from Profile → Connected accounts (OAuth 2.0, signed
