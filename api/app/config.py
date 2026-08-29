@@ -43,11 +43,9 @@ class Settings(BaseSettings):
     # the OAuth callback.
     public_base_url: str = "http://localhost:9090"
     # --- Provider (third-party account) configuration ---------------------
-    # Strava OAuth app credentials (developer.strava.com). When both are set
-    # (non-empty) the Strava adapter is registered and users can connect;
-    # otherwise Strava reads as "not configured" (404 on connect).
-    strava_client_id: str | None = None
-    strava_client_secret: str | None = None
+    # The OAuth client credentials (client id/secret) are NOT environment
+    # settings: they live in the database (provider_credentials) and are
+    # managed through the Server settings UI, encrypted at rest.
     # Where Strava sends the browser after authorization. Defaults to
     # {public_base_url}/api/v1/providers/strava/oauth/callback.
     strava_redirect_uri: str | None = None

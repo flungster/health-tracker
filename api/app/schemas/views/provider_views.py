@@ -54,3 +54,16 @@ class SyncResultView(BaseModel):
     imported: int
     skipped: int
     last_sync_at: datetime
+
+
+class ClientConfigView(BaseModel):
+    """The deployment's OAuth client for a provider, masked.
+
+    The client secret never leaves the API; ``configured`` is true only
+    when a stored credential set exists and its secret decrypts.
+    """
+
+    provider: str
+    configured: bool
+    client_id: str | None
+    display_name: str | None

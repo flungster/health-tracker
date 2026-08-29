@@ -1,4 +1,5 @@
-"""Provider routes: connect and disconnect third-party accounts (OAuth).
+"""Provider routes: connect and disconnect third-party accounts (OAuth),
+plus the server-level client configuration routes.
 
 The OAuth callback is the one provider route without an Authorization
 header: it is a plain browser redirect coming from the provider, so the user
@@ -14,17 +15,21 @@ from app.config import Settings, get_settings
 from app.errors.app_error import NotFoundError, ProviderUpstreamError, ValidationError
 from app.http.dependencies import (
     get_current_user,
+    get_provider_config_service,
     get_provider_service,
     get_provider_sync_service,
 )
 from app.models.user import User
 from app.schemas.mappers.provider_mapper import ProviderAccountMapper
+from app.schemas.requests.provider_requests import ClientConfigRequest
 from app.schemas.views.provider_views import (
+    ClientConfigView,
     ConnectUrlView,
     ProviderConnectionView,
     ProvidersView,
     SyncResultView,
 )
+from app.services.provider_config_service import ProviderConfigService
 from app.services.provider_service import ProviderService
 from app.services.provider_sync_service import ProviderSyncService
 
@@ -112,3 +117,50 @@ def sync_provider(
     with a ``Retry-After`` header when the provider rate-limited.
     """
     return provider_sync_service.sync(current_user.uuid, provider)
+
+
+# --- Server-level client configuration (not per-user) ----------------------
+# Any authenticated user may manage the deployment's OAuth client for a
+# provider; the client secret is stored encrypted and never exposed.
+
+
+@router.get("/{provider}/client/config", response_model=ClientConfigView)
+def get_client_config(
+    provider: str,
+    config_service: ProviderConfigService = Depends(get_provider_config_service),
+    current_user: User = Depends(get_current_user),
+) -> ClientConfigView:
+    """The deployment's OAuth client for a provider (the secret is never
+    exposed)."""
+    return config_service.get_client_config(provider)
+
+
+@router.put("/{provider}/client/config", response_model=ClientConfigView)
+def save_client_config(
+    provider: str,
+    body: ClientConfigRequest,
+    config_service: ProviderConfigService = Depends(get_provider_config_service),
+    current_user: User = Depends(get_current_user),
+) -> ClientConfigView:
+    """Save (or replace) the deployment's OAuth client for a provider.
+
+    The client secret is optional on an update (the stored one is kept) but
+    required the first time. The provider registry is rebuilt after the
+    commit, so the change is live without a restart.
+    """
+    return config_service.save_client_config(provider, body)
+
+
+@router.delete("/{provider}/client/config", status_code=204)
+def remove_client_config(
+    provider: str,
+    config_service: ProviderConfigService = Depends(get_provider_config_service),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Remove the deployment's OAuth client for a provider.
+
+    User connections are left in place: they are orphaned (sync paused)
+    until the credentials are saved again.
+    """
+    config_service.remove_client_config(provider)
+    return Response(status_code=204)

@@ -15,6 +15,7 @@ from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_type_dao import ActivityTypeDao
 from app.dao.provider_account_dao import ProviderAccountDao
+from app.dao.provider_credentials_dao import ProviderCredentialDao
 from app.dao.provider_dao import ProviderDao
 from app.dao.sport_activity_dao import (
     CyclingActivityDao,
@@ -29,13 +30,16 @@ from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import AuthenticationError
 from app.imports import build_default_detector
 from app.models.user import User
+from app.providers.factory import build_provider_registry
 from app.providers.registry import ProviderRegistry
 from app.security.passwords import PasswordService
+from app.security.secrets import SecretsBox
 from app.security.tokens import TokenService
 from app.services.activity_service import ActivityService
 from app.services.activity_stats import ActivityStatistics
 from app.services.auth_service import AuthService
 from app.services.import_service import ImportService
+from app.services.provider_config_service import ProviderConfigService
 from app.services.provider_service import ProviderService
 from app.services.provider_sync_service import ProviderSyncService
 from app.services.sport_service import SportService
@@ -160,6 +164,36 @@ def get_provider_sync_service(
         activity_dao=ActivityDao(session),
         registry=registry,
         import_service=import_service,
+    )
+
+
+def get_provider_config_service(
+    request: Request,
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+    settings: Settings = Depends(get_settings),
+) -> ProviderConfigService:
+    """ProviderConfigService bound to the request unit of work and the
+    deployment's secrets box.
+
+    A committed write rebuilds the process-wide provider registry (closing
+    the displaced adapters' pools), so credential changes are live without a
+    restart.
+    """
+    session: Session = unit_of_work.session
+    secrets_box: SecretsBox = request.app.state.secrets_box
+
+    def swap_registry() -> None:
+        old_registry: ProviderRegistry = request.app.state.provider_registry
+        new_registry = build_provider_registry(settings, session, secrets_box)
+        old_registry.close_all()
+        request.app.state.provider_registry = new_registry
+
+    return ProviderConfigService(
+        unit_of_work,
+        credential_dao=ProviderCredentialDao(session),
+        provider_dao=ProviderDao(session),
+        secrets_box=secrets_box,
+        registry_swap=swap_registry,
     )
 
 

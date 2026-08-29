@@ -398,6 +398,66 @@ the same shape). A connection links **one of the caller's own** external
 profiles to the local account so the app can pull that user's activities.
 Tokens are stored server-side and never returned by any endpoint.
 
+### Client configuration (server-level)
+
+The deployment's own OAuth client credentials for a provider — the app users
+connect *through* — are configured here, not in environment variables. Any
+account on the instance may manage them (single-family homelab assumption).
+The client secret is stored encrypted and **never** returned by any
+endpoint. A write rebuilds the provider registry, so changes are live
+immediately — no restart.
+
+### `GET /providers/{provider}/client/config`
+
+The deployment's client for a provider, masked. `configured` is true only
+when a stored credential set exists **and** its secret decrypts (a row with
+an undecryptable secret reports unconfigured, with the client id still
+visible, so it can be re-saved). Bearer auth required. Response `200`:
+
+```json
+{
+  "provider": "strava",
+  "configured": true,
+  "client_id": "12345",
+  "display_name": "Homelab Strava"
+}
+```
+
+`client_id` and `display_name` are `null` when not configured.
+`404 NOT_FOUND` for an unknown provider.
+
+### `PUT /providers/{provider}/client/config`
+
+Creates or replaces the deployment's client for a provider. Request body:
+
+```json
+{
+  "client_id": "12345",
+  "client_secret": "…",
+  "display_name": "Homelab Strava"
+}
+```
+
+- `client_id` (required, ≤ 128 chars, trimmed) — the provider app's client
+  id (not a secret; safe to display).
+- `client_secret` (≤ 512 chars) — **required** the first time a provider is
+  configured; omit it (or send `null`) on an update to keep the stored
+  secret (which can never be read back).
+- `display_name` (optional, ≤ 100 chars) — omit to keep the current label;
+  `null` clears it.
+
+Response `200`: the masked view. `422 VALIDATION_ERROR` for an empty
+`client_id`, an empty secret, oversized fields, or a missing secret on a
+first-time configuration; `404 NOT_FOUND` for an unknown provider.
+
+### `DELETE /providers/{provider}/client/config`
+
+Removes the deployment's client for a provider (soft delete). Response `204`.
+Users' existing connections are **not** touched: they become orphaned (sync
+paused; `connect`/`sync` return `404 NOT_FOUND`) until the credentials are
+saved again — re-saving the same app resumes sync with the stored tokens.
+`404 NOT_FOUND` when not configured.
+
 ### `GET /providers`
 
 All known providers (reference data) with a `configured` flag: whether this

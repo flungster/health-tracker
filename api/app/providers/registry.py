@@ -42,3 +42,12 @@ class ProviderRegistry:
     def available(self) -> list[str]:
         """Registered provider values, in registration order."""
         return list(self._adapters)
+
+    def close_all(self) -> None:
+        """Release the resources (HTTP connection pools) of every adapter.
+
+        Called on the displaced registry when it is replaced (a config
+        write) and is a no-op for an empty registry.
+        """
+        for adapter in self._adapters.values():
+            adapter.close()

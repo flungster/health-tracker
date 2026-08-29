@@ -17,3 +17,7 @@ class ProviderDao(BaseDao[Provider]):
         """Every known provider, in value order."""
         statement = select(Provider).order_by(Provider.value)
         return list(self.session.scalars(statement))
+
+    def get_by_value(self, value: str) -> Provider | None:
+        """The reference row for a provider value, or None when unknown."""
+        return self.session.scalars(select(Provider).where(Provider.value == value)).first()

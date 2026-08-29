@@ -98,10 +98,20 @@ fields stay `None`, notable gaps become warnings), summary heart rate/cadence
 double as fallbacks when trackpoints carry no samples, and unknown Strava
 sport types map to `other` with a warning.
 
-**Connection flow (OAuth).** Adapters are registered at app startup only when
-their credentials are present in the environment (`_build_provider_registry`
-in `main.py`), so an unconfigured provider reads as 404, not as an error.
-`ProviderService` (with `ProviderAccountMapper`) drives the flow:
+**Connection flow (OAuth).** The deployment's own OAuth client credentials
+(client id/secret, one row per provider) live in the `provider_credentials`
+table — the database is the only source; there are no environment variables
+for them. They are entered through the app's Server settings UI, stored
+**encrypted at rest** (Fernet; the per-deployment key is generated on first
+use and kept in `server_settings`, so no secret ever needs to be in the
+environment). At app startup — and again whenever the stored credentials
+change — `build_provider_registry` (in `providers/factory.py`) reads the
+active credential rows, decrypts them, and registers one adapter per
+provider, so an unconfigured provider reads as 404, not as an error. A row
+whose secret cannot be decrypted (corruption, or a restore that outlived its
+key) is skipped with an ERROR log: the provider reads as unconfigured until
+the credentials are re-saved. `ProviderService` (with
+`ProviderAccountMapper`) drives the flow:
 `GET /providers/{p}/connect` issues a short-lived **signed state token**
 (`TokenService.issue_oauth_state`) that binds the flow to the caller, then
 returns the adapter's authorize URL. The browser round-trips through the

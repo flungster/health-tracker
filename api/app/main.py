@@ -2,7 +2,8 @@
 
 from fastapi import FastAPI
 
-from app.config import Settings, get_settings
+from app.config import get_settings
+from app.db.session import make_session_factory
 from app.errors.handlers import register_error_handlers
 from app.http.activities import router as activities_router
 from app.http.auth import router as auth_router
@@ -10,33 +11,10 @@ from app.http.health import router as health_router
 from app.http.providers import router as providers_router
 from app.http.users import router as users_router
 from app.logging_config import configure_logging
-from app.providers import ProviderRegistry
-from app.providers.strava import StravaAdapter
+from app.providers.factory import build_provider_registry
 from app.security.rate_limiter import RateLimiter
+from app.security.secrets import ensure_secrets_box
 from app.version import api_version
-
-
-def _build_provider_registry(settings: Settings) -> ProviderRegistry:
-    """One adapter per provider whose configuration is present.
-
-    Providers without configuration (no credentials in the environment) are
-    simply not registered: they read as "not available on this instance"
-    (404) instead of erroring.
-    """
-    registry = ProviderRegistry()
-    if settings.strava_client_id and settings.strava_client_secret:
-        redirect_uri = settings.strava_redirect_uri or (
-            f"{settings.public_base_url.rstrip('/')}/api/v1/providers/strava/oauth/callback"
-        )
-        registry.register(
-            StravaAdapter(
-                settings.strava_client_id,
-                settings.strava_client_secret,
-                redirect_uri=redirect_uri,
-                scope=settings.strava_scope,
-            )
-        )
-    return registry
 
 
 def create_app() -> FastAPI:
@@ -46,9 +24,17 @@ def create_app() -> FastAPI:
     # Process-wide rate limiter shared by the auth routes (in-memory by design,
     # like the database engine: it must outlive a single request).
     application.state.rate_limiter = RateLimiter()
-    # Process-wide provider registry (adapters hold their own HTTP connection
-    # pools, so like the engine and limiter they outlive a single request).
-    application.state.provider_registry = _build_provider_registry(get_settings())
+    # Process-wide secrets box + provider registry: the deployment's Fernet
+    # key is generated on first use and stored in server_settings, and one
+    # adapter is registered per provider with a stored, usable credential
+    # set (the database is the only source of credentials). Like the engine
+    # and limiter they outlive a single request; startup is single-threaded,
+    # so the get-or-generate needs no locking.
+    with make_session_factory()() as startup_session:
+        application.state.secrets_box = ensure_secrets_box(startup_session)
+        application.state.provider_registry = build_provider_registry(
+            get_settings(), startup_session, application.state.secrets_box
+        )
     register_error_handlers(application)
     application.include_router(health_router)
     application.include_router(auth_router)

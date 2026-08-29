@@ -2,19 +2,28 @@
 
 Tests run against a dedicated Postgres database (``health_tracker_test``)
 on the compose stack, so a running ``make up`` (at least the db service) is
-required. The fixtures:
+required. The bootstrap (``pytest_configure`` — which runs before any test
+module, and thus before ``app.main``, is imported) :
 
-1. create the test database when missing (idempotent),
-2. apply all dbmate migrations to it,
-3. point the FastAPI app at it via a ``get_unit_of_work`` override,
-4. truncate all rows after every test.
+1. points the app at the test database (``DATABASE_URL``),
+2. creates the test database when missing (idempotent),
+3. applies all dbmate migrations to it.
+
+``create_app()`` runs at import time and reads the stored provider
+credentials + bootstraps the secrets box from the configured database, so
+the test database must exist, be migrated, and be the configured one before
+``from app.main import app`` runs anywhere. The fixtures then point the
+app's request sessions at the test database via a ``get_unit_of_work``
+override and truncate all rows after every test.
 """
 
+import os
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -23,7 +32,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import get_settings
 from app.db.session import get_unit_of_work
 from app.db.unit_of_work import UnitOfWork
-from app.main import app
+from app.providers.factory import build_provider_registry
+from app.providers.registry import ProviderRegistry
 from app.security.rate_limiter import RateLimiter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -48,9 +58,8 @@ def _compose(args: list[str]) -> None:
     )
 
 
-@pytest.fixture(scope="session")
-def test_database() -> None:
-    """Ensure the test database exists and is migrated (once per session)."""
+def _ensure_test_database() -> None:
+    """Create the test database (when missing) and apply all migrations."""
     # 1. Create the database when missing.
     check = _compose_capture(
         [
@@ -83,7 +92,35 @@ def test_database() -> None:
         )
     # 2. Apply all migrations to the test database.
     _compose(["run", "--rm", "-e", f"DATABASE_URL={_DBMATE_TEST_URL}", "migrate"])
-    return
+
+
+def _reset_provider_registry(app: FastAPI, engine: Engine) -> None:
+    """Rebuild the process-wide provider registry from the test database.
+
+    A client-config write in a test swaps the process-wide registry, but
+    that is not a database row: the ``client`` fixture truncates the
+    deployment tables after every test, and this reset rebuilds the
+    registry from them so the next test starts consistent with the
+    (now empty) tables.
+    """
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        fresh = build_provider_registry(get_settings(), session, app.state.secrets_box)
+    old_registry: ProviderRegistry = app.state.provider_registry
+    old_registry.close_all()
+    app.state.provider_registry = fresh
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Bootstrap the test database before ``app.main`` is imported.
+
+    ``create_app()`` (which runs at import time) bootstraps the secrets box
+    and the provider registry from the configured database, so the test
+    database must exist, be migrated, and be the one the app points at —
+    environment variables take precedence over any ``.env`` file.
+    """
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+    _ensure_test_database()
 
 
 def _compose_capture(args: list[str]) -> str:
@@ -98,8 +135,20 @@ def _compose_capture(args: list[str]) -> str:
     return result.stdout
 
 
+@pytest.fixture(scope="session")
+def app() -> FastAPI:
+    """The FastAPI application under test.
+
+    Imported here (not at module level) so that ``create_app()`` runs after
+    ``pytest_configure`` has pointed the app at the migrated test database.
+    """
+    from app.main import app
+
+    return app
+
+
 @pytest.fixture
-def engine(test_database: None) -> Iterator[Engine]:
+def engine() -> Iterator[Engine]:
     """A SQLAlchemy engine bound to the test database."""
     created = create_engine(TEST_DATABASE_URL)
     yield created
@@ -107,7 +156,7 @@ def engine(test_database: None) -> Iterator[Engine]:
 
 
 @pytest.fixture
-def client(engine: Engine) -> Iterator[TestClient]:
+def client(engine: Engine, app: FastAPI) -> Iterator[TestClient]:
     """A TestClient whose DB session points at the test database.
 
     Truncates all tables after the test finishes.
@@ -133,11 +182,17 @@ def client(engine: Engine) -> Iterator[TestClient]:
     finally:
         app.dependency_overrides.pop(get_unit_of_work, None)
         with engine.begin() as connection:
-            connection.execute(text("TRUNCATE user_profiles, users CASCADE"))
+            # user-owned tables cascade from users; the deployment-level
+            # tables (provider credentials, server settings) need explicit
+            # truncation.
+            connection.execute(
+                text("TRUNCATE user_profiles, users, provider_credentials, server_settings CASCADE")
+            )
+        _reset_provider_registry(app, engine)
 
 
 @pytest.fixture
-def uploads_dir(tmp_path: Path) -> Iterator[Path]:
+def uploads_dir(tmp_path: Path, app: FastAPI) -> Iterator[Path]:
     """Point the import service at a temporary uploads directory.
 
     Done by overriding the ``get_settings`` dependency (the service receives

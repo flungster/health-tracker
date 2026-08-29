@@ -115,3 +115,11 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def revoke(self, credentials: ProviderCredentials) -> None:
         """Revoke the connection on the provider (best effort)."""
+
+    def close(self) -> None:  # noqa: B027 — an intentional default no-op
+        """Release the resources the adapter holds (e.g. an HTTP pool).
+
+        The default is a no-op for adapters that hold none; adapters with
+        connection pools override it. Called when the registry holding the
+        adapter is replaced.
+        """

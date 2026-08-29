@@ -157,6 +157,29 @@ class TestProviderAccountDao:
             assert by_id.user_id == user_uuid
             assert dao.get_by_id(999_999) is None
 
+    def test_sync_since_column_defaults_null_and_round_trips(
+        self, client: TestClient, register_user, engine: Engine
+    ) -> None:
+        """Proves the M11a ``provider_accounts.sync_since`` column: present,
+        nullable (NULL = full history), and mapped by the ORM."""
+        user_uuid = _user_uuid(register_user)
+        with _direct_session(engine) as session:
+            dao = ProviderAccountDao(session)
+            dao.add(self._make_account(user_uuid))
+            session.commit()
+
+            account = dao.get_for_user(user_uuid, "strava")
+            assert account is not None
+            assert account.sync_since is None  # default: no floor
+
+            floor = datetime(2025, 1, 1, 0, 0, tzinfo=UTC)
+            account.sync_since = floor
+            session.commit()
+
+            fetched = ProviderAccountDao(session).get_for_user(user_uuid, "strava")
+            assert fetched is not None
+            assert fetched.sync_since == floor
+
     def test_one_row_per_user_per_provider(
         self, client: TestClient, register_user, engine: Engine
     ) -> None:

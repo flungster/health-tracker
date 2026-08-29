@@ -20,6 +20,7 @@ dependencies = [
     # Provider adapters (Strava) make outbound HTTPS calls to the user's
     # connected third-party accounts.
     "httpx>=0.28",
+    "cryptography>=50.0.1",
 ]
 
 [dependency-groups]

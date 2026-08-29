@@ -23,6 +23,9 @@ to Done in the overview.
 | M10b | Strava adapter: OAuth2 + v3 API client, JSON → ParsedActivity conversion | Done | 2026-08-26 |
 | M10c | Provider OAuth: connect/disconnect routes + callback, config wiring, profile UI | Done | 2026-08-26 |
 | M10d | Provider sync: paged activity walk, dedup, cursor resume, token refresh, sync API + UI | Done | 2026-08-26 |
+| M11a | Self-serve provider config: `server_settings` + `provider_credentials` schema, DAOs, Fernet at-rest encryption, `sync_since` floor | Done | 2026-08-28 |
+| M11b | Credential resolution: Fernet key bootstrap at startup, registry built from the DB, `STRAVA_*` env vars removed | Done | 2026-08-28 |
+| M11c | Client-config API: masked GET, upsert PUT (keep-or-set secret), DELETE, live registry rebuild on write | Done | 2026-08-29 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -31,6 +34,186 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M11c — Client-config API: the deployment's OAuth client, self-served (2026-08-29)
+
+Third slice of M11: the routes that let any signed-in account manage the
+deployment's OAuth client for a provider — `GET/PUT/DELETE
+/api/v1/providers/{p}/client/config`. What remains: the UI (M11d) and the
+sync lookback (M11e).
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(191 passed: 178 pre-existing + 13 config-API tests — the M11c contract
+stubs went from xfail to real; the only xfail left is the M11e lookback
+stub) · api image rebuilt; live smoke passed (below).
+
+### Endpoints (Q11 naming, Q16 edge semantics)
+- `GET` → masked view `{provider, configured, client_id, display_name}`.
+  `configured` is true only for an active row whose secret decrypts; a row
+  with an undecryptable secret reports unconfigured **with the client id
+  still visible** so it can be re-saved. Unknown provider → 404.
+- `PUT` → 200, the masked view; upsert. `client_id` required (trimmed; empty
+  → 422, ≤ 128 chars). `client_secret` required only when nothing usable is
+  stored yet (first-time, or re-configuring after a DELETE; empty → 422,
+  ≤ 512 chars); omitted/null on an update keeps the stored secret — which
+  can never be read back. `display_name`: omitted = keep, null = clear,
+  empty string = clear (≤ 100 chars). Unknown provider → 404.
+- `DELETE` → 204 soft delete (404 when not configured). User connections are
+  untouched: they become orphaned (sync paused; connect/sync 404) until the
+  credentials are saved again — re-saving the same app resumes sync with the
+  stored tokens.
+
+### Live registry rebuild on write (Q8)
+A write calls `swap_registry` (wired in the dependency): after the commit,
+the process-wide registry is rebuilt from the database and the displaced
+adapters are closed (`close_all`, from M11b). Saving credentials makes the
+provider connectable immediately — no restart — verified in the live smoke
+below (the connect URL carries the just-saved client id).
+
+### Code shape
+`ProviderConfigService` (get/save/remove; explicit validation; encrypts via
+the `SecretsBox`; reuses the soft-deleted row so there is one row per
+provider) · `ProviderCredentialMapper.to_view(credential, provider,
+configured)` (the secret never appears) · `ClientConfigRequest` /
+`ClientConfigView` · `ProviderDao.get_by_value` (reference-table check →
+404 before any work).
+
+### Tests (13, `tests/test_provider_config_api.py` — contract stubs now real)
+Unauthenticated PUT 401 · configure-then-GET masks the secret · PUT without
+a secret keeps the existing one · DELETE flips `/providers` to configured
+false · unknown provider 404 (GET and PUT) · `configured` flag tracks the
+DB · first PUT without a secret 422 · empty client id 422 · oversized field
+422 · DELETE without configuration 404 · display_name null clears / omitted
+keeps · saved credentials make the provider connectable (write-path
+rebuild).
+
+### Live smoke (rebuilt api on :9090)
+Fresh user: GET → unconfigured · PUT → 200, `configured: true`, secret never
+in a response · `/providers` flag true (read from the DB) · PUT without
+secret → 200 (kept) · PUT unknown provider → 404 · connect after save → 200
+with `client_id=12345` in the authorize URL (the rebuild is live) · DELETE →
+204, GET → unconfigured · DELETE again → 404 · unauthenticated PUT → 401.
+
+### Docs
+`api.md` Providers section: "Client configuration (server-level)" preamble +
+the three endpoints. Next: M11d — the Server settings page and the per-
+connection import-from floor in the UI.
+
+## M11b — Credential resolution: key bootstrap, registry from the DB, env vars out (2026-08-28)
+
+Second slice of M11: the running app now resolves its provider credentials
+**from the database** — the `STRAVA_CLIENT_ID`/`STRAVA_CLIENT_SECRET`
+environment variables are gone (pre-1.0, no deployments to protect), and the
+Fernet key that protects the stored secrets self-bootstraps on first start.
+Still no routes and no UI (those are M11c/M11d).
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(178 passed: 171 pre-existing + 7 new bootstrap tests; 7 xfail contract
+stubs) · api image rebuilt; live smoke passed (health, self-bootstrapped
+key row, `GET /providers` reading `configured` from the DB).
+
+### Key bootstrap (Q9 of the M11 design: ensure at startup, no env override)
+- `app/security/secrets.py::ensure_secrets_box(session)` — reads the
+  `secret_key` row from `server_settings`; on first use generates a Fernet
+  key, stores it, commits. Called once from `create_app()` through a short
+  session (startup is single-threaded → no locking; the DB `UNIQUE (key)`
+  is the backstop). The resulting `SecretsBox` is process-wide on
+  `app.state`, alongside the engine, limiter, and registry.
+- Key rotation stays a recorded non-goal (it would mean a second key slot +
+  re-encryption).
+
+### Registry from the database
+- New `app/providers/factory.py::build_provider_registry(settings, session,
+  secrets_box)` — one adapter per provider with an **active** credential
+  row: decrypts the stored secret and builds the adapter. A row whose
+  secret cannot be decrypted (corruption, or a restore outliving its key)
+  is **skipped with an ERROR log** — the provider reads as unconfigured and
+  re-saving the credentials repairs it (Q18). `create_app()` now builds the
+  registry this way instead of from env.
+- `ProviderRegistry.close_all()` + a default no-op `ProviderAdapter.close()`
+  (Strava's closes its httpx pool) — the machinery M11c's post-write
+  rebuild uses to close displaced adapters.
+
+### Env vars removed
+- `strava_client_id`/`strava_client_secret` deleted from `Settings`,
+  `docker-compose.yml`, and `.env.example`. `STRAVA_REDIRECT_URI`/
+  `STRAVA_SCOPE`/`PUBLIC_BASE_URL` stay (deployment-URL concerns, not
+  secrets). `installation.md` env table updated; the "Connecting Strava"
+  how-to now points at the Server settings UI (the page itself lands in
+  M11d, the API in M11c). `architecture.md` Providers section rewritten.
+
+### Test bootstrap rework (conftest)
+`create_app()` runs at **import time** and now touches the database, so the
+test bootstrap moved to `pytest_configure`: it points `DATABASE_URL` at the
+test database (env beats any `.env`) and creates/migrates it *before* any
+test module imports `app.main`. The session-scoped `app` fixture imports
+the app (after bootstrap); `client`/`uploads_dir` take it as a parameter.
+
+### Tests (7 new, `tests/test_provider_bootstrap.py`)
+Key get-or-generate (valid Fernet key stored; second call reuses it, exactly
+one row) · registry from DB (no creds → empty; stored creds → adapter live
+with the decrypted client id; soft-deleted row → not registered;
+undecryptable secret → skipped + ERROR log) · `close_all` no-op on an empty
+registry. Each test owns its deployment-table state (autouse truncate), so
+the suite is order-independent.
+
+### Live smoke (rebuilt api on :9090)
+Health ok (version 0.3.0) · first boot **self-bootstrapped the key** — a
+44-char `secret_key` row appeared in the live `server_settings` with no env
+involvement · `GET /providers` (fresh smoke user) → `strava: configured
+false`, read from the DB.
+
+## M11a — Self-serve provider config: schema, DAOs, at-rest encryption (2026-08-28)
+
+First slice of M11 (self-serve provider configuration, M11a–M11e): the deployment's own
+OAuth client credentials become a database-stored entity instead of environment variables,
+with client secrets encrypted at rest. This slice is **schema + code-side foundation only —
+no routes, no UI, no behavior change yet** (those are M11b–M11e, per the grilling session
+that shaped M11: DB is the only source of client creds, any authenticated user may configure,
+Fernet key self-bootstraps in `server_settings`, sync floor is a user preference).
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green (171 passed:
+158 pre-existing + 12 new DAO/secrets + 1 new `sync_since` round-trip; 7 xfail contract
+stubs for M11c/M11e) · migration verified up/down/up on a fresh database (scratch
+`ht_m11a_verify`) · live DB converged, `make migrate` no-op, health OK on :9090.
+
+### Schema (`20260827000001_provider_credentials.sql`)
+- `server_settings` — deployment-level key/value settings (no `user_id`); first tenant is
+  the Fernet key (row `secret_key`), generated on first use in M11b — no env var required.
+- `provider_credentials` — the deployment's OAuth client per provider: `client_id`,
+  `client_secret` (encrypted at rest), optional `display_name`; `UNIQUE (provider)`, FK →
+  `providers.value`. Soft-deleting a row leaves user connections orphaned (sync paused
+  until reconfigured) — the documented, non-cascading choice.
+- `provider_accounts.sync_since timestamptz NULL` — the user-chosen **inclusive** lower
+  bound of the sync walk (M11e): only activities started at or after it are imported;
+  NULL = full history. Key decision: it is a **user preference, not sync state** — unlike
+  `sync_cursor`/`last_sync_at` it survives reconnects.
+- `STRAVA_CLIENT_ID`/`STRAVA_CLIENT_SECRET` env vars are dead (pre-1.0, no deployments):
+  the database is the only source of client credentials. `STRAVA_REDIRECT_URI`/
+  `STRAVA_SCOPE`/`PUBLIC_BASE_URL` stay env (deployment-URL concerns, not secrets).
+
+### Code
+- Models `ProviderCredential` + `ServerSetting` (+ `ProviderAccount.sync_since`); DAOs
+  `ProviderCredentialDao` (get_active/get_any/add/save/mark_deleted — reconfigure reuses
+  the soft-deleted row, since `UNIQUE (provider)` spans deleted rows) + `ServerSettingDao`.
+- `app/security/secrets.py::SecretsBox` — Fernet encrypt/decrypt; `SecretsError` on
+  wrong-key/tampered tokens. `cryptography` added as a runtime dependency.
+- Test plumbing: the per-test TRUNCATE now covers the two deployment-level tables (they
+  are not user-owned, so `CASCADE` from `users` never reaches them).
+
+### Contract stubs (locked in now as `xfail(strict=True)`)
+- `test_provider_config_api.py` → M11c: `GET/PUT/DELETE /providers/{p}/client/config`
+  (masked view — secret never exposed; PUT-without-secret keeps the existing one; first
+  PUT without one is 422; `GET /providers` reads `configured` from the DB).
+- `test_provider_sync_lookback.py` → M11e: `POST /providers/{p}/sync` accepts an optional
+  `since` (ISO date); the floor is the walk's only boundary — the sweep covers
+  `[floor, newest]`, known ids skipped by dedup, cursor resume unchanged.
+
+### Note (applied-migration hazard)
+The WIP migration had already been applied to the local and test databases in an earlier
+shape (before `sync_since` existed), so dbmate (version-tracked) skipped the updated
+file. Both DBs were converged manually: test DB dropped + re-migrated fresh; live DB got
+the one `ALTER TABLE provider_accounts ADD COLUMN sync_since` (data intact).
 
 ## M10d — Provider sync: pull a connected user's activities (2026-08-26)
 

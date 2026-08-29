@@ -3,8 +3,9 @@
 from uuid import UUID
 
 from app.models.provider_account import ProviderAccount
+from app.models.provider_credential import ProviderCredential
 from app.providers.base import ProviderCredentials
-from app.schemas.views.provider_views import ProviderConnectionView
+from app.schemas.views.provider_views import ClientConfigView, ProviderConnectionView
 
 
 class ProviderAccountMapper:
@@ -64,4 +65,24 @@ class ProviderAccountMapper:
             display_name=account.display_name,
             connected_at=account.created_at,
             last_sync_at=account.last_sync_at,
+        )
+
+
+class ProviderCredentialMapper:
+    """Maps a deployment's provider credential row to its public view."""
+
+    @staticmethod
+    def to_view(
+        credential: ProviderCredential | None, provider: str, configured: bool
+    ) -> ClientConfigView:
+        """Map a credential row to its masked view (the secret excluded).
+
+        ``configured`` is decided by the service (an active row whose secret
+        decrypts); the mapper only shapes the fields.
+        """
+        return ClientConfigView(
+            provider=provider,
+            configured=configured,
+            client_id=credential.client_id if credential is not None else None,
+            display_name=credential.display_name if credential is not None else None,
         )

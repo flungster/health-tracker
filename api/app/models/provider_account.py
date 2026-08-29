@@ -36,6 +36,11 @@ class ProviderAccount(IntIdModel, TimestampMixin):
     scope: Mapped[str] = mapped_column(Text, nullable=False)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Inclusive lower bound of the sync walk (M11e): only activities started
+    # at or after this date are imported; NULL = full history. A user
+    # preference (set via the UI in M11d), not sync state — it survives
+    # reconnects, unlike sync_cursor/last_sync_at.
+    sync_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"ProviderAccount(user_id={self.user_id}, provider={self.provider!r})"

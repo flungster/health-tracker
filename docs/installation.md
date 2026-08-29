@@ -52,8 +52,6 @@ All configuration is passed via environment variables. Copy
 | `LOGIN_RATE_LIMIT_PER_MINUTE` | `10` | Max login attempts per client IP per minute; excess gets 429. |
 | `REGISTER_RATE_LIMIT_PER_MINUTE` | `5` | Max registrations per client IP per minute; excess gets 429. |
 | `PUBLIC_BASE_URL` | `http://localhost:9090` | URL the browser reaches the app at; builds the provider OAuth redirect URI (default) and the post-callback redirect. Set this to your real URL if the app is not on `localhost:9090`. |
-| `STRAVA_CLIENT_ID` | *(empty)* | Strava OAuth app id. Leave empty to run without Strava. |
-| `STRAVA_CLIENT_SECRET` | *(empty)* | Strava OAuth app secret. |
 | `STRAVA_REDIRECT_URI` | `{PUBLIC_BASE_URL}/api/v1/providers/strava/oauth/callback` | Override the OAuth redirect URI (it must exactly match one configured on the Strava app). |
 | `STRAVA_SCOPE` | `activity:read_all` | Scopes requested at connect time (read-only). |
 | `WEB_PORT` | `9090` | Host port the web UI is published on. |
@@ -72,10 +70,11 @@ functional without it; this is only needed to pull activities from Strava.
 2. Add the **Authorization Callback Domain** or redirect URI:
    `http://localhost:9090/api/v1/providers/strava/oauth/callback`
    (use `STRAVA_REDIRECT_URI` if your app is not on that URL).
-3. Copy the app's `Client ID` and `Client Secret` into `.env` as
-   `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET`.
-4. `make up` to restart the API. Strava now shows as *configured* under
-   **Profile → Connected accounts**; connect from there.
+3. In the app, open **Server settings** and save the app's `Client ID` and
+   `Client Secret` for Strava. They are stored encrypted in the database —
+   no `.env` change and no restart needed.
+4. Strava now shows as *configured* under **Profile → Connected accounts**;
+   connect from there.
 
 Only the read scope (`activity:read_all`) is requested, and the app only ever
 fetches the connected user's own activities — nothing is written to Strava.

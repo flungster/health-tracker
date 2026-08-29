@@ -2,7 +2,7 @@
 
 The schema is owned entirely by dbmate migrations in `db/migrations/`. The API
 never alters the schema. This document describes the current model (as of the
-`20260826000001_providers` migration) and the conventions it follows.
+`20260827000001_provider_credentials` migration) and the conventions it follows.
 
 ## Conventions
 
@@ -61,11 +61,16 @@ users 1───┬───1 user_profiles
                                ├───> activity_types (reference)
                                ├───> source_formats (reference, NULL)
                                └───> providers (reference, NULL)
+
+provider_credentials ──> providers (reference)   (deployment-level, one row
+server_settings                            per provider; not user-owned)
 ```
 
 `users` cascades to `activities` and to `provider_accounts`; `activities`
 cascades to all of its sub-resources. Deleting a user removes their
 activities, everything under them, and their provider connections.
+`provider_credentials` and `server_settings` are deployment-level (no
+`user_id`); deleting a user never touches them.
 
 ## Tables
 
@@ -200,9 +205,44 @@ profile, and never exposed through the API (tokens included).
 | `scope` | `text` | Space-delimited list of the scopes the user granted. |
 | `last_sync_at` | `timestamptz` NULL | When the last activity sync completed. |
 | `sync_cursor` | `text` NULL | Provider-specific opaque pagination resume point. |
+| `sync_since` | `timestamptz` NULL | User-chosen inclusive lower bound of the sync walk: only activities started at or after it are imported. NULL = full history. A user preference (set via the UI), not sync state — it survives reconnects. |
 | audit | | |
 
 Constraint: `UNIQUE (user_id, provider)` — one connection per provider.
+
+### `provider_credentials`
+
+The deployment's own OAuth client credentials for one provider — the app the
+users connect *through*, configured via the UI (one row per provider). The
+per-user connections (the users' own tokens) remain in `provider_accounts`.
+Deployment-level: no `user_id`, no user scoping.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigint` PK (identity) | Internal primary key. |
+| `provider` | `text` unique, FK → providers.value | One credential set per provider. |
+| `client_id` | `text` | The provider app's client id (not a secret; safe to display). |
+| `client_secret` | `text` | The client secret, **encrypted at rest** (Fernet; the key lives in `server_settings`). Never exposed via the API. |
+| `display_name` | `text` NULL | Optional human label for the provider app, for the UI. |
+| audit | | |
+
+Soft-deleting a row (removing the client) leaves user connections intact —
+they are orphaned (sync paused) until credentials are saved again; re-saving
+the same app resumes sync silently.
+
+### `server_settings`
+
+Deployment-level key/value settings (not per-user data). First tenant: the
+Fernet key (row `secret_key`) used to encrypt
+`provider_credentials.client_secret` at rest. Generated on first use; no
+environment variable is required.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigint` PK (identity) | Internal primary key. |
+| `key` | `text` unique | Setting name (e.g. `secret_key`). |
+| `value` | `text` | Setting value. Never returned by the API for secret settings. |
+| audit | | |
 
 ### `activity_trackpoints`
 
@@ -300,6 +340,7 @@ time of writing.)
 | `20260825000004_source_formats_split_units.sql` | `source_formats` + `split_units` reference tables (seeded); `activities.source_format` and `activity_splits.split_type` become FKs (replacing the `CHECK`s). |
 | `20260825000005_int_ids_and_public_uuids.sql` | Identifier convention: `users`/`activities` gain an int `id` PK (old PK-uuid column renamed to `uuid`, kept unique); the 1:1 satellite tables (`user_profiles`, `activity_hr_zones`, the four `<sport>_activity`) switch from a uuid PK to an int `id` PK with the uuid FK kept as a unique column; `strength_exercise_sets` gains the public `uuid`. All incoming FKs are re-pointed at the uuid columns. |
 | `20260826000001_providers.sql` | Provider infrastructure: `providers` reference table (seeded with `strava`) + `provider_accounts` (one of a user's own connected third-party profiles: external identity, OAuth credentials, sync state). `activities` gains nullable `provider` + `external_activity_id` (FK + partial unique index for dedup); `activities.source_format` becomes nullable so it describes the file/export format only. |
+| `20260827000001_provider_credentials.sql` | Self-serve provider configuration: `server_settings` (deployment-level key/value; first tenant the Fernet key `secret_key`) + `provider_credentials` (the deployment's OAuth client per provider: client id, client secret encrypted at rest, optional label). `provider_accounts` gains `sync_since` (user-chosen inclusive lower bound of the sync walk; NULL = full history). |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.
