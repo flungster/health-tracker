@@ -8,12 +8,17 @@ new. The cursor is checkpointed after each full page, so an interrupted or
 rate-limited run resumes where it stopped; a run that finishes the walk
 clears the cursor.
 
+Every run is bounded below by an import-from floor: the request's ``since``
+when given, else the connection's saved ``sync_since``, else no floor (full
+history). The floor is the walk's only boundary — the provider is asked for
+activities started at or after it on every page.
+
 Provider failures surface as ``ProviderUpstreamError`` (502); a rate limit
 carries ``retry_after_seconds`` (the response gets a ``Retry-After`` header).
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from app.dao.activity_dao import ActivityDao
@@ -52,18 +57,21 @@ class ProviderSyncService:
         self._registry = registry
         self._import_service = import_service
 
-    def sync(self, user_uuid: UUID, provider: str) -> SyncResultView:
+    def sync(self, user_uuid: UUID, provider: str, since: date | None = None) -> SyncResultView:
         """Run one sync. Commits per imported activity and per cursor page.
 
-        Raises NotFoundError when there is no active connection (or the
-        provider is unknown/unconfigured) and ProviderUpstreamError when the
-        provider fails (with ``retry_after_seconds`` on a rate limit).
+        ``since`` (an ISO 8601 date, UTC midnight) overrides the
+        connection's saved import-from floor for this run only. Raises
+        NotFoundError when there is no active connection (or the provider is
+        unknown/unconfigured) and ProviderUpstreamError when the provider
+        fails (with ``retry_after_seconds`` on a rate limit).
         """
         account = self._account_dao.get_for_user(user_uuid, provider)
         if account is None:
             raise NotFoundError(f"No {provider} connection to sync.")
         adapter = self._registry.get(provider)
         access_token = self._ensure_access_token(adapter, account)
+        start_date = self._floor_to_unix(since, account.sync_since)
 
         cursor = account.sync_cursor
         imported = 0
@@ -72,7 +80,7 @@ class ProviderSyncService:
         pages = 0
         while True:
             pages += 1
-            page = adapter.fetch_activity_ids(access_token, cursor)
+            page = adapter.fetch_activity_ids(access_token, cursor, start_date=start_date)
             for external_id in page.external_activity_ids:
                 if self._activity_dao.exists_for_provider(provider, external_id):
                     skipped += 1
@@ -105,14 +113,28 @@ class ProviderSyncService:
         account.last_sync_at = datetime.now(UTC)
         self._unit_of_work.commit()
         logger.info(
-            "%s sync for user %s: %d imported, %d skipped (%d pages)",
+            "%s sync for user %s: %d imported, %d skipped (%d pages, floor %s)",
             provider,
             user_uuid,
             imported,
             skipped,
             pages,
+            start_date,
         )
         return SyncResultView(imported=imported, skipped=skipped, last_sync_at=account.last_sync_at)
+
+    @staticmethod
+    def _floor_to_unix(since: date | None, saved_floor: datetime | None) -> int | None:
+        """The walk's lower bound as a unix timestamp, or None (no floor).
+
+        Precedence: the request's ``since`` wins, then the connection's
+        saved ``sync_since`` (a user preference), then no floor.
+        """
+        if since is not None:
+            return int(datetime(since.year, since.month, since.day, tzinfo=UTC).timestamp())
+        if saved_floor is not None:
+            return int(saved_floor.timestamp())
+        return None
 
     def _ensure_access_token(self, adapter: ProviderAdapter, account: ProviderAccount) -> str:
         """A usable access token, refreshing (and persisting the rotation)

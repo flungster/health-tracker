@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.dao.activity_dao import ActivityDao
-from app.dao.activity_hr_zone_dao import ActivityHrZoneDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.provider_account_dao import ProviderAccountDao
@@ -30,7 +29,6 @@ from app.dao.sport_activity_dao import (
     RunningActivityDao,
     StrengthActivityDao,
 )
-from app.dao.user_profile_dao import UserProfileDao
 from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import ActivityImportError, NotFoundError, ValidationError
 from app.imports.base import FormatDetector
@@ -73,12 +71,10 @@ def _import_service(engine: Engine) -> Iterator[ImportService]:
         activity_dao=ActivityDao(session),
         trackpoint_dao=ActivityTrackpointDao(session),
         split_dao=ActivitySplitDao(session),
-        hr_zone_dao=ActivityHrZoneDao(session),
         running_dao=RunningActivityDao(session),
         cycling_dao=CyclingActivityDao(session),
         rowing_dao=RowingActivityDao(session),
         strength_dao=StrengthActivityDao(session),
-        profile_dao=UserProfileDao(session),
         detector=FormatDetector([]),
         statistics=ActivityStatistics(),
         settings=get_settings(),

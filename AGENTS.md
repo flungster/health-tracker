@@ -45,7 +45,8 @@ health-tracker/
       features/      sport-specific detail views (RunningDetail, StrengthDetail, ...)
   db/migrations/     dbmate v2 SQL migrations (single file, up + down)
   docs/              progress.md (milestone log), architecture.md, installation.md,
-                     usage.md, data-model.md, api.md, import-formats.md
+                     usage.md, data-model.md, api.md, import-formats.md,
+                     future-ideas.md (parked ideas, unscheduled)
   docker-compose.yml
   Makefile
   .env.example

@@ -8,6 +8,7 @@ import ActivitiesPage from "./pages/ActivitiesPage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
+import SettingsPage from "./pages/SettingsPage";
 import UploadPage from "./pages/UploadPage";
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/activities/:id" element={<ActivityDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

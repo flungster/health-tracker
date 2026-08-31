@@ -40,10 +40,7 @@ def get_profile(
     user_service: UserService = Depends(get_user_service),
 ) -> ProfileView:
     """Return the authenticated user's health settings."""
-    profile = user_service.get_profile(current_user.uuid)
-    if profile is None:
-        return UserMapper.empty_profile_view()
-    return UserMapper.to_profile_view(profile)
+    return user_service.get_profile_view(current_user.uuid)
 
 
 @router.patch("/me/profile", response_model=ProfileView)
@@ -53,5 +50,4 @@ def update_profile(
     user_service: UserService = Depends(get_user_service),
 ) -> ProfileView:
     """Update the authenticated user's health settings."""
-    profile = user_service.update_profile(current_user.uuid, request)
-    return UserMapper.to_profile_view(profile)
+    return user_service.update_profile(current_user.uuid, request)

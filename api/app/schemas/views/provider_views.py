@@ -41,6 +41,9 @@ class ProviderConnectionView(BaseModel):
     display_name: str | None
     connected_at: datetime
     last_sync_at: datetime | None
+    # The user's import-from floor (UTC midnight); null = import everything.
+    # A user preference: it survives reconnects, unlike the sync cursor.
+    sync_since: datetime | None
 
 
 class SyncResultView(BaseModel):

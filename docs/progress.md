@@ -26,6 +26,12 @@ to Done in the overview.
 | M11a | Self-serve provider config: `server_settings` + `provider_credentials` schema, DAOs, Fernet at-rest encryption, `sync_since` floor | Done | 2026-08-28 |
 | M11b | Credential resolution: Fernet key bootstrap at startup, registry built from the DB, `STRAVA_*` env vars removed | Done | 2026-08-28 |
 | M11c | Client-config API: masked GET, upsert PUT (keep-or-set secret), DELETE, live registry rebuild on write | Done | 2026-08-29 |
+| M11d | Server settings UI (provider clients) + import-from floor on connections | Done | 2026-08-29 |
+| M11e | Sync lookback: import-from floor bounds the walk, per-run `since` rescan | Done | 2026-08-29 |
+| M12 | Heart-rate zones: profile-relative, computed at view time (no fallback, table dropped) | Done | 2026-08-30 |
+| M13a | User-configurable zones (I): profile settings (date of birth + custom tops), `zone_sources` + versioned snapshots, reference resolution in the profile view | Done | 2026-08-30 |
+| M13b | User-configurable zones (II): detail computation against the resolved reference + versioned snapshots with supersede-on-change | Done | 2026-08-31 |
+| M13c | User-configurable zones (III): profile UI — date of birth + custom zone tops, effective-reference display | Done | 2026-08-31 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -34,6 +40,402 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M13c — User-configurable heart-rate zones (III): profile UI for the zone reference (2026-08-31)
+
+Third and final slice of M13: the **Profile** page now exposes everything that
+shapes heart-rate zones — date of birth and four custom zone tops alongside the
+existing max/resting HR — plus a line naming which reference is currently in
+effect. The API needed no change (M13a's request/view already carried these);
+this is pure frontend.
+
+**Decisions:**
+- The card shows the **effective reference** from the server-computed profile
+  fields (`zone_source` / `effective_max_heart_rate` / `age`) — "Zones are
+  computed from your custom boundaries (…)" / "(190 bpm)" / "age — max HR 178
+  (220 − age, currently 42)" / "No zone reference is set yet". No precedence
+  logic in the client.
+- **All-or-nothing + ascending** custom zones are validated locally for a
+  friendly inline error (the server re-validates and owns the envelope); all
+  four blank clears them. The form keeps its existing shape: it always sends
+  every profile field, empty → `null`.
+
+**Gates:** `make lint` green (ruff, mypy 101 api files unchanged, tsc, eslint) ·
+`make test` green (**242 passed** — no API change in this slice) · web image
+rebuilt; live check passed (below).
+
+### Code (`web/src/` only)
+- `api/types.ts::ProfileView` gains the six stored fields plus the three
+  computed reference fields (mirrors M13a's view).
+- `api/hooks.ts::useUpdateProfile` now takes a named `ProfileUpdateInput` (all
+  seven fields) instead of the two-field inline type.
+- `pages/ProfilePage.tsx` — the Heart-rate zones card gains: a date-of-birth
+  field (optional; helper text explains the `220 − age` fallback), a Custom
+  zone boundaries fieldset (four bpm inputs, helper text: priority over max HR,
+  all-or-blank to clear), the effective-reference line above the form, and a
+  local validation state rendered through `ErrorNote`. Prefill extends to all
+  new fields; the existing save/invalidate flow is unchanged.
+
+### Live check (web rebuilt on :9090)
+SPA serves `/profile` · the new bundle carries "Custom zone boundaries",
+"Date of birth", and the ascending/completeness validation strings · API round-
+trip for this exact payload shape (all fields, nulls) already covered by the
+M13a/M13b API tests. Health ok, version unchanged (0.3.0).
+
+### Docs
+`usage.md`: Heart-rate zones section now points at the Profile page for all
+three references (+ "enter all of them or none" and the effective-reference
+line), Profile bullet lists the new fields, activity-detail note says "needs a
+zone reference set on your profile" instead of only max HR.
+
+**M13 is complete** (M13a–M13c): a user can define custom zones, or rely on
+their max heart rate / age; every activity's zone chart follows the active
+reference immediately, with a versioned per-activity history of what was shown.
+
+## M13b — User-configurable heart-rate zones (II): reference-based computation + versioned snapshots (2026-08-31)
+
+Second slice of M13: the activity detail endpoint now computes heart-rate
+zones against the **resolved zone reference** (custom > manual max HR >
+age-derived, from M13a) instead of only the profile's manual max heart rate —
+and each result is stored as a versioned `activity_zone_snapshots` row.
+
+**Decisions:**
+- **Custom replaces percent bands.** A `custom` reference uses the explicit
+  boundaries (`hr <= top1`, `(top1, top2]`, …, zone 5 above `top4`); a
+  `max_heart_rate`/`age` reference keeps M12's percent-of-max-HR bands against
+  that reference's max HR (for age, `220 - current_age`). No fallback: no
+  reference → `heart_rate_zones: null` (unchanged from M12).
+- **Reuse, then supersede.** Trackpoints are immutable and the bands depend
+  only on trackpoints + reference, so a live snapshot whose recorded reference
+  matches the resolved one is returned as-is (no re-aggregation of up to
+  100k samples per view). A changed reference recomputes and **supersedes**:
+  the old row is soft-deleted (kept for history) in the same transaction as the
+  new insert — "one live row per activity" holds, and changing your profile
+  still updates every activity immediately (M12's guarantee). "Match" means
+  source + effective values (the custom tops, or the max HR; `age` is display
+  metadata). An activity with no HR timeline gets neither zones nor a snapshot.
+
+**Gates:** `make lint` green (ruff, mypy 101 api files, tsc, eslint) · `make
+test` green (**242 passed** — +6 new in `TestZoneReferenceAndSnapshots`) · api
+image rebuilt; live check passed (below). No schema change in this slice.
+
+### Code
+- `ActivityTrackpointDao` — the aggregation (lead-based per-sample gaps + sum
+  FILTER) extracted to `_aggregate_zone_seconds(activity_id, zone)`; the percent
+  bands stay `zone_seconds_for`, and a new `custom_zone_seconds_for(activity_id,
+  tops)` builds the boundary bands. Same per-sample timing rule as before.
+- `ActivityService` — `_zones_for` now: resolve the reference (`None` → no
+  zones); reuse a matching live snapshot; else recompute via `_compute_zones`,
+  then supersede + store (`_store_snapshot` commits). New
+  `ActivityZoneSnapshotDao` injected (constructor + dependency wiring); the old
+  "profile max HR only" path is gone. `_reference_matches` holds the match rule.
+- New `ActivityZoneSnapshotMapper`: `create(activity_id, reference, stats)` (per-
+  source field population) and `to_stats(snapshot)`.
+
+### Tests (6 new, `TestZoneReferenceAndSnapshots` in `test_activities.py`)
+- Age reference computes zones (dob only → zone 5 non-empty, proving the derived
+  178 bpm drives the bands) + its snapshot records `source='age'`, the derived
+  max HR, and the age.
+- Custom boundaries replace percent bands (custom wins over a manual 200: zone 1
+  non-empty where percent-of-200 would be empty; whole 1480 s distributed) + the
+  snapshot records `source='custom'` and the tops, no effective max HR.
+- Snapshot reuse + supersede: three views under one reference write exactly one
+  row; changing the max HR writes a second, leaving **one live (new mhr) + one
+  soft-deleted (old mhr)** row.
+- No HR timeline → `null` zones and **no** snapshot row (inline no-HR GPX).
+- Snapshots are scoped per activity (a second activity has its own row, never the
+  first one's).
+
+### Live check (api rebuilt on :9090)
+Fresh smoke user, `run_sample.gpx` (HR 120–160 ramp): no profile → `null` ·
+max HR 180 → `{z3:200, z4:300, z5:980}` (M12's exact numbers) · second view
+reused it (no new row) · custom tops 150/152/154/160 → `{z1:620, z2:40,
+z3:40, z4:780}` (custom bands) · clearing the custom set → back to max-HR-180
+bands · date of birth only (max HR cleared) → `{z3:180, z4:280, z5:1020}` against
+the age-derived 178 bpm. History for the activity: **four** rows, one live
+(`source='age'`, mhr 178), three superseded. Health ok, version unchanged (0.3.0).
+
+### Docs
+`api.md`: detail-endpoint note rewritten for the zone reference + snapshot reuse;
+profile section cross-references it · `data-model.md`: "Heart-rate zones"
+section rewritten (custom vs percent bands, when snapshots are written/reused/
+superseded) · `usage.md`: Heart-rate zones section now the three-way reference +
+custom-boundary semantics; Profile bullet adjusted.
+
+**Next: M13c — profile UI for date of birth + custom zone tops** (the API has
+existed since M13a; the Profile page still only exposes max/resting HR).
+
+## M13a — User-configurable heart-rate zones (I): settings, reference resolution, snapshot schema (2026-08-30)
+
+First slice of M13. A user can now define *what* their heart-rate zones are
+computed against — beyond M12's single "max heart rate" knob: a complete set of
+four **custom zone boundaries**, or an **age-derived** max heart rate
+(`220 - current_age`) from a date of birth. This slice lands the settings,
+the fixed-precedence **reference resolution** (exposed in the profile view),
+and the schema for versioned per-activity zone results — **no change to how
+the detail endpoint computes zones yet** (still M12's view-time, max-HR-based;
+feeding it the resolved reference + writing snapshots is M13b), and no UI for
+the new settings (a later slice).
+
+**Decisions:**
+- Precedence is fixed and unambiguous: **custom zones > manual max heart rate
+  > age-derived**. Custom counts only as a *complete, strictly-ascending set of
+  four* (or all cleared) — validated in the service so clients get the app error
+  envelope; a partial set stored cannot exist. Date of birth is validated to an
+  implied age of 1–120 (plus a formula backstop in the resolver so `220 - age`
+  can never go non-positive).
+- A zone **snapshot** is one computation: it records the reference used (`source`
+  + its values) *and* the resulting seconds per zone. At most one live row per
+  activity (partial unique index on `activity_id WHERE deleted_at IS NULL`); a
+  superseded row is soft-deleted and kept for history, never destroyed. Nothing
+  writes snapshots yet (M13b); the table + DAO exist so that slice is code-only.
+
+**Gates:** `make lint` green (ruff, mypy 100 api files, tsc, eslint) · `make
+test` green (**236 passed, 0 xfail**; new in this slice: `test_zone_reference.py`
+with the resolver's 12 unit tests, the snapshot DAO's 9 constraint/behavior
+tests in `test_zone_snapshots_dao.py`, and the profile reference API cases in
+`test_users.py`) · migration verified up/down/up on a fresh scratch DB
+(`ht_m13a_verify`, dropped after) · live stack migrated in place, api image
+rebuilt; live check passed (below).
+
+### Migration
+`20260830000001_zone_config_and_snapshots.sql` — `user_profiles` gains
+`date_of_birth date NULL` + four optional custom zone tops (each `> 0 AND
+<= 300`); new reference table `zone_sources` (seeded `custom` /
+`max_heart_rate` / `age`, immutable) and `activity_zone_snapshots` (int id PK,
+uuid FK → activities CASCADE, source FK + per-source reference values, five
+zone-second columns, audit columns; partial unique index for "one live row per
+activity"; `updated_at` trigger). Verified: fresh DB → up (all migrations) →
+down 1 (both tables and all five profile columns gone, shape checked) → up
+(re-applied), then scratch DB dropped.
+
+### Code
+- `app/services/zone_reference.py` — pure resolution: `ZoneReference` dataclass,
+  `current_age(dob, today)`, `resolve_zone_reference(profile, today)` with the
+  fixed precedence (unit-testable without a DB). `ZoneSource` StrEnum mirrors
+  the reference table.
+- Profile surface: `user_profiles` model + DAO apply gains date of birth and the
+  four custom tops; `ProfileUpdateRequest` (bpm fields ge=30 le=300) and
+  `ProfileView` gain the stored fields **plus computed** `zone_source`,
+  `effective_max_heart_rate` and `age`. `UserService.update_profile` validates
+  the resulting dob (not future, age 1–120) and custom set (complete +
+  strictly ascending); `get_profile_view` resolves the reference.
+- New `ActivityZoneSnapshot` model (+ registered in `app.models`) and
+  `ActivityZoneSnapshotDao` (`get_current`, `add`, `mark_superseded`) — the
+  write path M13b will use; unused by any service in this slice.
+
+### Tests
+- `test_zone_reference.py` (12, pure): age boundaries, each source alone,
+  precedence custom > max HR > age, partial custom set ignored, resolver backstop
+  for an implausible (non-positive formula) age.
+- `test_zone_snapshots_dao.py` (9, against the migrated test DB — also proving
+  the migration's constraints): round-trip; a second *live* snapshot for one
+  activity is rejected by the partial unique index; an unknown `source` is
+  rejected by the reference FK; supersede soft-deletes (row kept, `deleted_at`
+  set) and frees the slot for a new snapshot; double-supersede is a no-op;
+  per-source field population (custom tops vs max HR); user delete cascades away.
+- `test_users.py` profile reference cases (added earlier in this slice): empty view shape,
+  dob → `zone_source: age` with derived max HR + age, precedence custom over age
+  and max-HR-over-age, null clears / omitted keeps, future dob 422, implausible
+  dob 422, partial custom set 422, non-ascending set 422, full-set round-trip.
+
+### Live check (api rebuilt on :9090)
+Fresh smoke user: GET profile → all settings null, `zone_source` null · PATCH
+dob `1984-05-01` → `zone_source: "age"`, `effective_max_heart_rate: 178`
+(220 − 42), `age: 42` · PATCH a full custom set → `"custom"` (wins over age;
+effective max HR null) · PATCH the four custom tops as explicit `null` → back to
+`"age"` 178 · future dob → 422 `VALIDATION_ERROR` · partial custom set (two of
+four) → 422. Health ok, version unchanged (0.3.0).
+
+### Docs
+`data-model.md`: `user_profiles` columns, new `zone_sources` +
+`activity_zone_snapshots` table sections, "Heart-rate zones" section rewritten as
+reference + view-time computation (noting M13a feeds only max HR into it), ER
+diagram, migration row · `api.md`: profile GET/PATCH with the computed
+zone-reference fields and the validation rules. No `usage.md` change (no UI yet).
+
+**Next: M13b — feed the resolved reference into the detail computation and write
+the versioned snapshots** (custom boundaries replace percent bands for custom;
+age/max-HR keep the bands against their max HR).
+
+## M12 — Heart-rate zones: profile-relative, computed at view time (2026-08-30)
+
+Started from a bug report: the owner's only real activity ("Morning Run",
+avg HR 112, max 129) showed ~83% of its time in **zone 5**. Investigation:
+the stored zones were internally consistent with the import-time algorithm —
+the algorithm's reference was the problem. With no profile max heart rate set
+(the owner has no profile row), the code fell back to *the activity's own max
+HR* (129), so 112 bpm = 87% → zone 5. A second latent flaw: zones were frozen
+at import, so setting a max heart rate later would never fix old activities.
+
+**Decision:** zones are relative to a *person*, so they are computed **at view
+time** from the stored trackpoints, against the **viewer's current profile max
+heart rate** — and there is **no fallback**. No profile max HR (or no HR
+timeline) → `heart_rate_zones: null` and a UI hint linking to the profile,
+instead of a misleading chart. The `activity_hr_zones` table is dropped.
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(**205 passed, 0 xfail** — one import-time zone unit test removed, two
+view-time API tests added) · migration up/down/up verified on a fresh scratch
+DB · api + web images rebuilt; live check passed (below).
+
+### Migration
+`20260829000001_drop_activity_hr_zones.sql` — `up` drops the table; `down`
+recreates it (columns, unique `activity_id`, trigger, comments) exactly as it
+stood. Verified: fresh DB → up (all migrations) → down (table restored,
+shape checked) → up (dropped again), then scratch DB removed.
+
+### Code
+- `ActivityStatistics.compute` no longer computes zones or takes a max HR;
+  `compute_hr_zones`/`_zone_for` removed from the import path. `HrZoneStats`
+  stays, now as the view-time result type.
+- `ActivityTrackpointDao.zone_seconds_for(activity_id, max_heart_rate)` —
+  one SQL aggregation over the stored trackpoints: `lead()`-based per-sample
+  gaps, percent-of-max-HR `case` bands, `sum() FILTER` per zone; `None` when
+  there is no HR timeline. Same rules as before (each timed HR sample counts
+  until the next).
+- `ActivityService.get_detail` resolves the caller's profile max HR and calls
+  the DAO (constructor now takes `UserProfileDao` instead of the zone DAO).
+- `ImportService` loses the profile + zone DAOs entirely — import stores
+  nothing zone-related.
+- `ActivityMapper.to_detail_view` takes `HrZoneStats | None`;
+  `create_hr_zones` removed. `ActivityHrZone` model +
+  `ActivityHrZoneDao` deleted.
+- UI: when zones are `null` but the activity has HR trackpoints, the zones
+  card explains why and links to the Profile page.
+
+### Tests
+- `test_imports_gpx_run` now expects `heart_rate_zones: null` at import time
+  (no profile max HR).
+- New `TestHeartRateZonesViewTime`: no profile max HR → zones `null` despite
+  HR data · set max HR 180 → zones appear (zone 1 empty, zone 5 > 0) · change
+  to 200 **without re-import** → the distribution shifts (160 bpm is 89% of
+  180 → zone 5, but exactly 80% of 200 → zone 4, so zone 5 empties). This
+  last step is the regression the bug report was about.
+
+### Live check (api + web rebuilt on :9090)
+Fresh `m12-smoke` user: uploaded `run_sample.gpx` (HR 120–160) → zones `null`
+· `PATCH /users/me/profile` max 180 → zones `{z3: 200, z4: 300, z5: 980}`
+(sum = full 1480 s) · max 200, same activity, no re-import → `{z2: 160,
+z3: 320, z4: 1000, z5: 0}`. The owner's real activity (no profile max HR
+set) now returns `null` zones; against a plausible 190 bpm its trackpoints
+distribute mostly into zone 2 — matching the avg-112 effort, instead of the
+old 83%-zone-5.
+
+### Docs
+`data-model.md`: zones section rewritten as computed-not-stored, ER diagram +
+`user_profiles` notes, migration table row · `api.md`: detail-endpoint note
+on view-time, caller-relative zones · `usage.md`: Heart-rate zones section
+rewritten (no fallback, changes apply everywhere immediately, profile hint).
+
+## M11e — Sync lookback: the floor bounds the walk, per-run `since` (2026-08-29)
+
+Fifth and final slice of M11 (and of the self-serve Strava effort as a whole):
+the import-from floor is now the sync walk's lower boundary, and a one-off
+`since` overrides it per run.
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(**204 passed, 0 xfail** — the M11e contract stub came off and is a real test
+again) · api + web images rebuilt; live check passed (below).
+
+### The floor is the walk's only boundary
+- Precedence per run: the request's `since` (UTC midnight) → the
+  connection's saved `sync_since` → no floor (full history). The chosen floor
+  is sent as the provider list call's `start_date` on **every** page, so a
+  paused/resumed run keeps walking the same range.
+- The provider stops returning rows once the walk crosses the floor, so a
+  floored walk ends on a short page and clears its cursor like any completed
+  walk. Dedup (already-imported ids are skipped, no detail re-fetch) is
+  unchanged.
+
+### Code
+- `ProviderAdapter.fetch_activity_ids` gains a keyword `start_date` (unix
+  lower bound); `StravaClient.list_activity_summaries` sends it as
+  Strava's `start_date` param.
+- `ProviderSyncService.sync(user, provider, since=None)` resolves the floor
+  (`_floor_to_unix`) and threads it through the walk; it is logged.
+- `POST /providers/{p}/sync` accepts an optional body
+  `{"since": "YYYY-MM-DD"}` (`SyncRequest`); no body = saved floor or none.
+- UI: a **Rescan from…** control on the connected row (one-off date + run)
+  beside Sync; the floor control from M11d persists the standing preference.
+
+### Tests (7 new in `TestSyncLookback`; the xfail contract file was folded in)
+`since` imports only activities at/after it (the former xfail contract, now
+real) · the saved floor bounds the walk with no request · request `since`
+overrides the saved floor (and leaves it untouched) · the floor is sent on
+every list call · a two-page floored walk pages past a full page, fetches the
+empty tail, and completes (cursor cleared) · malformed `since` 422s.
+`MockStravaSince` was merged into the shared `MockStrava` (which now honors
+`start_date` and records list params), per the stub's note; the xfail stub
+file was deleted.
+
+### Live check (api + web rebuilt on :9090)
+Health ok · `POST /sync` without a body → 404 (unconfigured; no regression) ·
+`POST /sync` with a `since` body → 404 (body parses, same downstream) ·
+malformed `since` → 422 · SPA serves the new bundle.
+
+### Docs
+`api.md`: the sync endpoint's optional `since` body and floor precedence ·
+`usage.md`: "Rescan from…" under Connected accounts.
+
+**M11 is complete** (M11a–M11e): the deployment's Strava client is entered in
+the app, stored encrypted, live without a restart; users connect their own
+accounts, choose an import-from floor, and can rescan any range one-off.
+
+## M11d — Server settings UI + import-from floor (2026-08-29)
+
+Fourth slice of M11: the frontend for self-serve provider configuration, plus
+the per-connection import-from floor (stored and settable; the sync walk
+honoring it is M11e).
+
+**Gates:** `make lint` green (ruff, mypy, tsc, eslint) · `make test` green
+(198 passed: 191 pre-existing + 7 new connection-settings tests; 1 xfail =
+the M11e lookback stub) · api + web images rebuilt; live smoke passed (below).
+
+### Server settings page
+New `/settings` page ("Server settings" in the nav and the title). The
+Providers section (the M11 scope) shows one card per provider with a
+Configured/Not-configured badge, a Client ID field, a Client secret password
+field ("Leave blank to keep the current secret" once configured — the secret
+can never be read back), an optional Display name, Save, and Remove (confirm
+warns that existing connections pause). Any signed-in account may use it (the
+homelab assumption, Q6).
+
+### Connection states on the Profile page
+- Provider not configured, no connection → "Not configured on this server." +
+  a link to Server settings.
+- Provider not configured but a connection exists (orphan, Q10) → "Sync
+  paused — … is not configured on this server." + a re-add link; no
+  Sync/Disconnect buttons (both 404 without a registry adapter).
+- Configured + connected → the row gains an **Import from** control: presets
+  (All time / 30 days / 90 days / 1 year) plus a custom date input, persisted
+  immediately.
+
+### Import-from floor (API side)
+`provider_accounts.sync_since` (M11a) is now settable:
+`PATCH /providers/{p}/connection {"sync_since": "YYYY-MM-DD"|null}` — stored
+as UTC midnight; the connection view now returns `sync_since`. It is a user
+preference: it survives reconnects (`apply_credentials` deliberately does not
+touch it). 404 when there is no connection (or the provider is unknown); 422
+for a malformed date.
+
+### Tests (7 new, `TestConnectionSettings` in `test_providers_api.py`)
+Set the floor and read it back (stored at UTC midnight) · null clears it ·
+the floor survives disconnect + reconnect · no connection 404s · unknown
+provider 404s · malformed date 422s · unauthenticated 401s. The callback
+test's exact key-set assertion now includes `sync_since`.
+
+### Live smoke (api + web rebuilt on :9090)
+Health ok · SPA served at `/settings` · PATCH without a connection → 404 ·
+seeded a connection row → GET `sync_since: null` → PATCH stores
+`2026-06-01T00:00:00Z` and reads it back → PATCH null clears it → malformed
+date 422s (seed row cleaned up afterwards).
+
+### Docs
+`usage.md`: new "Server settings" section + the floor in Connected accounts
+(also fixed the "server administrator" wording — any account configures) ·
+`api.md`: `PATCH …/connection` + `sync_since` on the connection view + a
+sync-section note that the floor bounds imports (enforced in M11e).
 
 ## M11c — Client-config API: the deployment's OAuth client, self-served (2026-08-29)
 

@@ -97,10 +97,15 @@ class StravaAdapter(ProviderAdapter):
             display_name=_display_name(body),
         )
 
-    def fetch_activity_ids(self, access_token: str, cursor: str | None) -> ActivityIdPage:
+    def fetch_activity_ids(
+        self, access_token: str, cursor: str | None, *, start_date: int | None = None
+    ) -> ActivityIdPage:
         before = self._decode_cursor(cursor)
         summaries = self._client.list_activity_summaries(
-            access_token, before=before, per_page=DEFAULT_PER_PAGE
+            access_token,
+            before=before,
+            start_date=start_date,
+            per_page=DEFAULT_PER_PAGE,
         )
         external_ids: list[str] = []
         for entry in summaries:

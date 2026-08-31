@@ -101,11 +101,15 @@ class ProviderAdapter(ABC):
         """The connected user's own profile on the provider."""
 
     @abstractmethod
-    def fetch_activity_ids(self, access_token: str, cursor: str | None) -> ActivityIdPage:
+    def fetch_activity_ids(
+        self, access_token: str, cursor: str | None, *, start_date: int | None = None
+    ) -> ActivityIdPage:
         """The next page of the user's activity ids, newest first.
 
         ``cursor`` is the opaque resume point from the previous page
-        (``None`` for the first page).
+        (``None`` for the first page). ``start_date`` is an optional unix
+        lower bound: only activities started at or after it are returned
+        (the walk's floor; it applies to every page of the walk).
         """
 
     @abstractmethod

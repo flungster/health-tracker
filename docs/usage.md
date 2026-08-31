@@ -64,15 +64,34 @@ Clicking an activity opens its detail page:
   rate and cadence.
 - **Heart rate** — a line chart of heart rate across the activity.
 - **Time in heart-rate zones** — a bar chart of the seconds spent in each of
-  the five zones.
+  the five zones (see below; needs a zone reference set on your profile).
 - **Sport metrics** — a panel for the activity's sport (running pace, cycling
   power, rowing stroke rate / 500 m split, strength volume).
 
 ## Heart-rate zones
 
-Zones are computed from a maximum heart rate. health-tracker uses your
-**profile max heart rate** when you have set one; otherwise it falls back to
-the activity's own max heart rate. Boundaries (percent of max HR):
+Zones are personal: health-tracker computes them against a **zone reference**
+from your profile, resolved with fixed precedence —
+
+1. **Custom zones**, if you set all four boundaries on the **Profile** page;
+2. otherwise your **max heart rate**, set on the **Profile** page;
+3. otherwise an **age-derived** max heart rate (`220 - age`, if you set a date
+   of birth on the **Profile** page).
+
+The Profile card shows which reference is currently in effect. They are
+computed when you open an activity (from its recorded heart-rate samples), so
+if you later change your profile, the zones update on **every** activity
+immediately — no re-importing anything.
+
+If none of the three is set, the zone chart is not shown (an activity's own max
+HR is not a fair reference — it would make every activity look like mostly zone
+5); the page links you to your profile to set a max heart rate.
+
+For custom zones, each boundary is an explicit bpm cutoff (zone 1 is at or
+below the first top, zone *n* is above the *(n−1)*th top and at or below the
+*n*th, zone 5 is above the fourth). The four tops must be strictly ascending —
+enter all of them or none. For a max-heart-rate or age-derived reference,
+boundaries are percent of that max HR:
 
 | Zone | Range | Meaning |
 |---|---|---|
@@ -82,9 +101,6 @@ the activity's own max heart rate. Boundaries (percent of max HR):
 | 4 | 72–80% | threshold |
 | 5 | > 80% | VO2 max |
 
-Set your max (and optionally resting) heart rate on the **Profile** page to get
-consistent zones across all activities.
-
 ## Profile
 
 The **Profile** page has four parts:
@@ -92,8 +108,10 @@ The **Profile** page has four parts:
 - **Account** — your name, email, and join date.
 - **Connected accounts** — connect or disconnect a third-party service (e.g.
   Strava) and sync your activities from it.
-- **Heart-rate zones** — set your max and resting heart rate (bpm). This drives
-  the zone chart on every activity.
+- **Heart-rate zones** — set your max and resting heart rate (bpm), an optional
+  date of birth, and up to four custom zone boundaries. The card shows which
+  reference your activities' zones are currently computed from (custom > max HR
+  > age). With none set, no zone chart is shown.
 - **Change password** — verify your current password and set a new one.
 
 ## Connected accounts
@@ -105,16 +123,50 @@ data, where it is yours to keep.
 
 - **Connect** — on the Profile page, click **Connect** for a service. You are
   sent to the service's authorization page; approve it and you are returned
-  here with a confirmation. Only services configured by your server
-  administrator appear as connectable — others show as "Not configured on
-  this server."
+  here with a confirmation. Only services configured on this server are
+  connectable — others show as "Not configured on this server" with a link to
+  the [Server settings](#server-settings) page.
 - **Sync** — click **Sync** on a connected service to pull your activities
   from it. The first sync imports your whole history; later syncs only add
   what is new (the row shows when it was last synced). A very large history
   may take more than one sync — just run it again.
+- **Import from** — each connection has an import-from floor, set from the
+  connected row: **All time** (the default — import everything), **30 days**,
+  **90 days**, **1 year**, or a custom date. Syncs import only activities
+  started on or after the floor, which also makes re-syncs cheap for a huge
+  history you do not care about. The floor is your preference: it survives
+  disconnecting and reconnecting.
+- **Rescan from…** — for a one-off run, pick any date and the next sync
+  re-walks the history from there (already-imported activities are skipped).
+  It does not change the saved import-from floor.
 - **Disconnect** — click **Disconnect** on a connected service. This revokes
   the connection at the service and stops it from being used. Activities you
   already imported remain in your data.
+
+## Server settings
+
+The **Server settings** page (top nav) is where this server's connections to
+third-party services are configured — the *app* your accounts connect through,
+not your personal accounts. Any account on the server can change these
+settings.
+
+For each provider (Strava for now):
+
+1. Create an OAuth app in the provider's developer settings (for Strava:
+   <https://www.strava.com/settings/api> → "Create New App"), with the
+   redirect URI `{PUBLIC_BASE_URL}/api/v1/providers/strava/oauth/callback`
+   (default `http://localhost:9090/api/v1/providers/strava/oauth/callback`).
+2. Enter the app's **Client ID** and **Client secret** on the Server settings
+   page and click **Save**. The secret is stored encrypted and is never shown
+   again — on a later save, leave the field blank to keep the current secret.
+   An optional **Display name** labels the provider in the UI.
+3. The provider is immediately usable (no restart): **Connect** appears on the
+   Profile page.
+
+**Remove** deletes the server's client for a provider. People's existing
+connections are not deleted — they are paused ("Sync paused" on the Profile
+page) until the app is added again; re-saving it resumes syncing with the
+tokens they already granted.
 
 ## Managing activities
 

@@ -1,5 +1,6 @@
-"""Tests for the provider sync (M10d): the paged walk, dedup, cursor
-checkpoints/resume, token refresh, rate-limit handling, and the API route.
+"""Tests for the provider sync (M10d, M11e): the paged walk, dedup, cursor
+checkpoints/resume, token refresh, rate-limit handling, the import-from
+floor, and the API route.
 """
 
 from collections.abc import Iterator
@@ -60,9 +61,10 @@ def _detail_body(external_id: int) -> dict[str, Any]:
 class MockStrava:
     """A stateful mock Strava: paged activity list, per-id detail, tokens.
 
-    The list endpoint honors the ``before`` cursor like the real API: it
-    returns the newest activities started before the cursor (100 per page),
-    so re-walks and resumes behave as they would against Strava.
+    The list endpoint honors the ``before`` cursor and the ``start_date``
+    floor like the real API: it returns the newest activities started before
+    the cursor and at or after the floor (100 per page), so re-walks,
+    resumes, and floored walks behave as they would against Strava.
     ``second_list_call_limited`` makes the second list call answer 429 with a
     Retry-After, to exercise the stop-and-resume path.
     """
@@ -74,12 +76,15 @@ class MockStrava:
         self._activities = sorted(activities, key=lambda a: a["start_unix"], reverse=True)
         self._second_list_call_limited = second_list_call_limited
         self.list_calls = 0
+        self.list_params: list[dict[str, str]] = []
         self.detail_ids: list[int] = []
         self.token_grants: list[str] = []
         self.auth_seen: list[str] = []
 
-    def _page(self, before_unix: int | None) -> list[dict[str, Any]]:
+    def _page(self, before_unix: int | None, start_unix: int | None) -> list[dict[str, Any]]:
         rows = self._activities
+        if start_unix is not None:
+            rows = [a for a in rows if a["start_unix"] >= start_unix]
         if before_unix is not None:
             rows = [a for a in rows if a["start_unix"] < before_unix]
         return rows[:PAGE_SIZE]
@@ -107,9 +112,12 @@ class MockStrava:
                 return httpx.Response(
                     429, json={"detail": "Rate limit exceeded."}, headers={"Retry-After": "30"}
                 )
+            self.list_params.append(dict(request.url.params))
             before = request.url.params.get("before")
             before_unix = int(before) if before is not None else None
-            page = self._page(before_unix)
+            start = request.url.params.get("start_date")
+            start_unix = int(start) if start is not None else None
+            page = self._page(before_unix, start_unix)
             summaries = [
                 {"id": a["id"], "name": a["name"], "start_date": _iso(a["start_unix"])}
                 for a in page
@@ -164,6 +172,7 @@ class SyncFixture:
         access_token: str = "at-1",
         refresh_token: str = "rt-1",
         sync_cursor: str | None = None,
+        sync_since: datetime | None = None,
     ) -> None:
         """Insert an active provider account row outside the request lifecycle."""
         factory = sessionmaker(bind=self.engine, expire_on_commit=False)
@@ -180,6 +189,7 @@ class SyncFixture:
                     token_expires_at=token_expires_at,
                     scope="activity:read_all",
                     sync_cursor=sync_cursor,
+                    sync_since=sync_since,
                 )
             )
             session.commit()
@@ -198,6 +208,7 @@ class SyncFixture:
                 "last_sync_at": account.last_sync_at,
                 "access_token": account.access_token,
                 "refresh_token": account.refresh_token,
+                "sync_since": account.sync_since,
             }
         finally:
             session.close()
@@ -257,10 +268,14 @@ def _small_history() -> list[dict[str, Any]]:
     return _activities(2, int(datetime(2026, 8, 1, 9, 0, tzinfo=UTC).timestamp()), id_base=500)
 
 
-def _sync_response(env: SyncFixture) -> httpx.Response:
+def _sync_response(env: SyncFixture, since: str | None = None) -> httpx.Response:
+    json_body: dict[str, Any] | None = None
+    if since is not None:
+        json_body = {"since": since}
     response: httpx.Response = env.client.post(
         "/api/v1/providers/strava/sync",
         headers={"Authorization": f"Bearer {env.token}"},
+        json=json_body,
     )
     return response
 
@@ -467,3 +482,134 @@ class TestSyncFailures:
 
     def test_sync_requires_authentication(self, client: TestClient) -> None:
         assert client.post("/api/v1/providers/strava/sync").status_code == 401
+
+
+OLD_UNIX = int(datetime(2026, 1, 15, 10, 0, tzinfo=UTC).timestamp())
+NEW_UNIX = int(datetime(2026, 8, 1, 9, 0, tzinfo=UTC).timestamp())
+
+
+def _mixed_history() -> list[dict[str, Any]]:
+    """One old activity (January) and one new one (August)."""
+    return [
+        {"id": 101, "name": "Old Run", "start_unix": OLD_UNIX},
+        {"id": 102, "name": "New Run", "start_unix": NEW_UNIX},
+    ]
+
+
+class TestSyncLookback:
+    """The walk's import-from floor: the request's ``since`` overrides the
+    connection's saved ``sync_since``, and the floor bounds every page."""
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_mixed_history()), id="mixed")], indirect=True
+    )
+    def test_since_imports_only_activities_at_or_after_it(self, sync_env: SyncFixture) -> None:
+        sync_env.seed_connection()
+
+        response = _sync_response(sync_env, since="2026-06-01")
+        assert response.status_code == 200, response.text
+        body: dict[str, Any] = response.json()
+        assert body["imported"] == 1
+        assert body["skipped"] == 0
+
+        provenance = sync_env.read_provenance()
+        assert provenance is not None
+        assert provenance["external_activity_id"] == "102"
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_mixed_history()), id="mixed")], indirect=True
+    )
+    def test_saved_floor_bounds_the_walk_without_a_request(self, sync_env: SyncFixture) -> None:
+        sync_env.seed_connection(sync_since=datetime(2026, 6, 1, tzinfo=UTC))
+
+        response = _sync_response(sync_env)
+        assert response.status_code == 200, response.text
+        assert response.json()["imported"] == 1
+
+        provenance = sync_env.read_provenance()
+        assert provenance is not None
+        assert provenance["external_activity_id"] == "102"
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_mixed_history()), id="mixed")], indirect=True
+    )
+    def test_request_since_overrides_the_saved_floor(self, sync_env: SyncFixture) -> None:
+        # A wide saved floor (all of 2026) plus a narrow one-off rescan.
+        sync_env.seed_connection(sync_since=datetime(2026, 1, 1, tzinfo=UTC))
+
+        response = _sync_response(sync_env, since="2026-06-01")
+        assert response.status_code == 200, response.text
+        assert response.json()["imported"] == 1
+
+        provenance = sync_env.read_provenance()
+        assert provenance is not None
+        assert provenance["external_activity_id"] == "102"
+
+        # The override is one-off: the saved floor is untouched.
+        account = sync_env.read_account()
+        assert account is not None
+        assert account["sync_since"] == datetime(2026, 1, 1, tzinfo=UTC)
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_mixed_history()), id="mixed")], indirect=True
+    )
+    def test_the_floor_applies_to_every_page(self, sync_env: SyncFixture) -> None:
+        sync_env.seed_connection(sync_since=datetime(2026, 6, 1, tzinfo=UTC))
+
+        response = _sync_response(sync_env)
+        assert response.status_code == 200
+
+        # The floor (UTC midnight of 2026-06-01) was sent on every list call.
+        expected = str(int(datetime(2026, 6, 1, tzinfo=UTC).timestamp()))
+        assert sync_env.mock.list_calls >= 1
+        assert all(call.get("start_date") == expected for call in sync_env.mock.list_params)
+
+    @pytest.mark.parametrize(
+        "sync_env",
+        [
+            pytest.param(
+                MockStrava(
+                    [
+                        *_activities(100, NEW_UNIX, id_base=9000),
+                        *_activities(
+                            2, int(datetime(2026, 7, 1, 9, 0, tzinfo=UTC).timestamp()), id_base=8000
+                        ),
+                    ]
+                ),
+                id="two-pages-floored",
+            )
+        ],
+        indirect=True,
+    )
+    def test_a_floored_walk_stops_at_the_floor(
+        self, sync_env: SyncFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 100 activities in August (a full page) plus 2 in July, with the
+        # floor between them: the walk must page past the first page, fetch
+        # the (empty) tail, and finish — importing only the August page.
+        monkeypatch.setattr("app.services.provider_sync_service.MAX_SYNC_PAGES", 2)
+        sync_env.seed_connection(sync_since=datetime(2026, 7, 15, tzinfo=UTC))
+
+        response = _sync_response(sync_env)
+        assert response.status_code == 200, response.text
+        body: dict[str, Any] = response.json()
+        assert body["imported"] == 100
+        assert body["skipped"] == 0
+
+        account = sync_env.read_account()
+        assert account is not None
+        assert account["sync_cursor"] is None  # the walk completed at the floor
+        assert sync_env.mock.list_calls == 2
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_mixed_history()), id="mixed")], indirect=True
+    )
+    def test_malformed_since_422s(self, sync_env: SyncFixture) -> None:
+        sync_env.seed_connection()
+
+        response: httpx.Response = sync_env.client.post(
+            "/api/v1/providers/strava/sync",
+            headers={"Authorization": f"Bearer {sync_env.token}"},
+            json={"since": "not-a-date"},
+        )
+        assert response.status_code == 422

@@ -65,6 +65,7 @@ class ProviderAccountMapper:
             display_name=account.display_name,
             connected_at=account.created_at,
             last_sync_at=account.last_sync_at,
+            sync_since=account.sync_since,
         )
 
 

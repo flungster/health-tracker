@@ -2,7 +2,7 @@
 
 The schema is owned entirely by dbmate migrations in `db/migrations/`. The API
 never alters the schema. This document describes the current model (as of the
-`20260827000001_provider_credentials` migration) and the conventions it follows.
+`20260830000001_zone_config_and_snapshots` migration) and the conventions it follows.
 
 ## Conventions
 
@@ -49,10 +49,10 @@ users 1───┬───1 user_profiles
           │
           ├───* provider_accounts ──> providers (reference)
           │
-          └───* activities 1───┬───* activity_trackpoints
-                               ├───1 activity_hr_zones
-                               ├───* activity_splits
-                               ├───1 running_activity
+            └───* activities 1───┬───* activity_trackpoints
+                                 ├───* activity_splits
+                                ├───0..1+ activity_zone_snapshots ──> zone_sources (reference)
+                                ├───1 running_activity
                                ├───1 cycling_activity
                                ├───1 rowing_activity
                                ├───┬───1 strength_activity
@@ -90,15 +90,21 @@ Application accounts.
 
 ### `user_profiles`
 
-Per-user health settings, 1:1 with `users` (unique on `user_id`). Drives
-heart-rate zone computation.
+Per-user health settings, 1:1 with `users` (unique on `user_id`). The
+settings define the **zone reference** heart-rate zones are computed against,
+resolved with fixed precedence (see "Heart-rate zones" below): a complete,
+strictly-ascending set of four custom zone boundaries > a manually entered
+`max_heart_rate` > an age-derived max heart rate (`220 - current_age`, from
+`date_of_birth`).
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `bigint` PK (identity) | Internal primary key. |
 | `user_id` | `uuid` unique, FK → users (uuid) | |
-| `max_heart_rate` | `int` NULL | 1–300 bpm. Used to derive the five zones. |
-| `resting_heart_rate` | `int` NULL | 1–300 bpm. |
+| `max_heart_rate` | `int` NULL | bpm, 30–300. Manually entered max heart rate; the reference for activity zones when custom zones are not set. |
+| `resting_heart_rate` | `int` NULL | 30–300 bpm. |
+| `date_of_birth` | `date` NULL | Implied age must be 1–120. Feeds the age-derived max heart rate (`220 - current_age`). |
+| `custom_zone_1_top_bpm` … `custom_zone_4_top_bpm` | `int` NULL × 4 | bpm, each > 0 and ≤ 300. User-defined tops of zones 1–4 (zone 5 is above zone 4's top). Valid only as a complete strictly-ascending set of four; all NULL when custom zones are not in use. |
 | audit | | |
 
 ### `activities`
@@ -282,23 +288,65 @@ miles. Computed from trackpoints at import time.
 | `cadence_avg_rpm` | `int` NULL | Per-split average, when available. |
 | audit | | |
 
-### `activity_hr_zones`
+### `zone_sources`
 
-Seconds spent in each of the five heart-rate zones, 1:1 with `activities`
-(unique on `activity_id`). Computed at import from the trackpoint heart rates
-and the user's max HR (or the activity's own max HR when the profile is
-unset).
+Reference table of the reference a heart-rate zone snapshot was computed from.
+Seeded by migration, immutable (same convention as `activity_types`).
 
-| Column | Type | Zone (percent of max HR) |
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | The reference code and the public API value (`custom`, `max_heart_rate`, `age`). |
+| `description` | `text` | Human-readable label for the UI (e.g. `Age (220 - age)`). |
+| `created_at` | `timestamptz` | Only audit column. |
+
+### `activity_zone_snapshots`
+
+Versioned per-activity heart-rate zone results: one row is **one
+computation**, recording both the reference it was computed from (`source`
+plus the corresponding values) and the resulting seconds per zone. At most one
+row per activity is **live** (`deleted_at IS NULL`, enforced by a partial
+unique index on `activity_id`); when a newer computation supersedes one, the
+old row is soft-deleted and kept for history — never destroyed.
+
+| Column | Type | Notes |
 |---|---|---|
 | `id` | `bigint` PK (identity) | Internal primary key. |
-| `activity_id` | `uuid` unique, FK → activities (uuid) | |
-| `zone_1_seconds` | `int` | < 56% (warmup) |
-| `zone_2_seconds` | `int` | 56–63% (easy) |
-| `zone_3_seconds` | `int` | 64–71% (tempo) |
-| `zone_4_seconds` | `int` | 72–80% (threshold) |
-| `zone_5_seconds` | `int` | > 80% (VO2 max) |
-| audit | | |
+| `activity_id` | `uuid` FK → activities (uuid) | Cascades. The snapshot's activity; unique among live rows. |
+| `source` | `text` FK → zone_sources.value | Where this computation's reference came from. |
+| `max_heart_rate` | `int` NULL | Effective max HR in bpm, when source is `max_heart_rate` or `age`; NULL for custom. |
+| `age` | `int` NULL | The user's age in years at computation time, when source is `age`. |
+| `custom_zone_1_top_bpm` … `custom_zone_4_top_bpm` | `int` NULL × 4 | The custom zone tops used, when source is `custom`; NULL otherwise. |
+| `zone_1_seconds` … `zone_5_seconds` | `int` × 5 | Seconds spent in each zone for this computation (≥ 0). |
+| audit | `timestamptz` × 3 | `created_at` is when the snapshot was computed. `deleted_at` set = superseded (history). |
+
+### Heart-rate zones (reference + view-time computation)
+
+Two parts: the **zone reference** and the **computation**.
+
+The *reference* is what zones are computed against, resolved from
+`user_profiles` with fixed precedence: a complete custom zone set > manual
+`max_heart_rate` > age-derived (`220 - current_age`). The profile view
+reports the resolved reference (`zone_source`, `effective_max_heart_rate`,
+`age`) so a client can show "zones are computed from …" without re-implementing
+the precedence.
+
+The *computation* — seconds spent in each of the five zones — happens **at
+view time** in the activity detail endpoint, from the stored
+`activity_trackpoints`, against the resolved reference: a **custom** reference
+uses its explicit boundaries (`hr <= top1`, `(top1, top2]`, …, zone 5 above
+`top4`); a **max_heart_rate** or **age** reference uses percent-of-max-HR bands
+(< 56% warmup, 56–63% easy, 64–71% tempo, 72–80% threshold, > 80% VO2 max)
+against that reference's max heart rate. When the caller has no zone reference,
+or the activity has no heart-rate timeline, the API reports
+`heart_rate_zones: null`.
+
+Each timed, HR-bearing trackpoint accounts for the time until the next such
+point. The result is stored in `activity_zone_snapshots`: one live row per
+activity, reused while the profile's reference is unchanged and superseded (old
+row soft-deleted for history) when it changes — so changing your profile changes
+every activity's zones immediately, without re-importing. (Zones were once stored
+in an `activity_hr_zones` table, frozen at import time, until it was dropped in
+M12 — `20260829000001_drop_activity_hr_zones.sql`.)
 
 ### Sport-specific tables (1:1 with `activities`)
 
@@ -341,6 +389,8 @@ time of writing.)
 | `20260825000005_int_ids_and_public_uuids.sql` | Identifier convention: `users`/`activities` gain an int `id` PK (old PK-uuid column renamed to `uuid`, kept unique); the 1:1 satellite tables (`user_profiles`, `activity_hr_zones`, the four `<sport>_activity`) switch from a uuid PK to an int `id` PK with the uuid FK kept as a unique column; `strength_exercise_sets` gains the public `uuid`. All incoming FKs are re-pointed at the uuid columns. |
 | `20260826000001_providers.sql` | Provider infrastructure: `providers` reference table (seeded with `strava`) + `provider_accounts` (one of a user's own connected third-party profiles: external identity, OAuth credentials, sync state). `activities` gains nullable `provider` + `external_activity_id` (FK + partial unique index for dedup); `activities.source_format` becomes nullable so it describes the file/export format only. |
 | `20260827000001_provider_credentials.sql` | Self-serve provider configuration: `server_settings` (deployment-level key/value; first tenant the Fernet key `secret_key`) + `provider_credentials` (the deployment's OAuth client per provider: client id, client secret encrypted at rest, optional label). `provider_accounts` gains `sync_since` (user-chosen inclusive lower bound of the sync walk; NULL = full history). |
+| `20260829000001_drop_activity_hr_zones.sql` | Drops the `activity_hr_zones` table: heart-rate zones are computed at view time from the trackpoints, relative to the viewer's profile max heart rate, instead of being frozen at import. |
+| `20260830000001_zone_config_and_snapshots.sql` | User-configurable heart-rate zones: `user_profiles` gains `date_of_birth` + four optional custom zone tops; new `zone_sources` reference table (seeded `custom` / `max_heart_rate` / `age`) + versioned `activity_zone_snapshots` (one computation per row, at most one live row per activity; superseded rows soft-deleted for history). |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

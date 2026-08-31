@@ -160,23 +160,53 @@ Response `200`: the updated user (same shape as `GET /users/me`).
 
 ### `GET /users/me/profile`
 
-Return the user's health settings.
+Return the user's health settings, plus the heart-rate **zone reference**
+currently in effect (computed from them).
 
 ```json
-{ "max_heart_rate": 190, "resting_heart_rate": 60 }
+{
+  "max_heart_rate": null,
+  "resting_heart_rate": 60,
+  "date_of_birth": "1984-05-01",
+  "custom_zone_1_top_bpm": null,
+  "custom_zone_2_top_bpm": null,
+  "custom_zone_3_top_bpm": null,
+  "custom_zone_4_top_bpm": null,
+  "zone_source": "age",
+  "effective_max_heart_rate": 178,
+  "age": 42
+}
 ```
 
-Both fields are `null` until set.
+Stored settings: `max_heart_rate` and `resting_heart_rate` (bpm, 30–300),
+`date_of_birth` (`YYYY-MM-DD`; the implied age must be 1–120), and four
+`custom_zone_N_top_bpm` boundaries (bpm, 30–300) that are only valid as a
+complete strictly-ascending set.
+
+The zone reference in effect is resolved with fixed precedence: **custom
+zones > manual `max_heart_rate` > age-derived (`220 - current_age`)**. The
+computed fields name it: `zone_source` is `"custom"`, `"max_heart_rate"` or
+`"age"` (or `null` when nothing is set), `effective_max_heart_rate` the max
+HR used (`null` for custom zones), and `age` when the source is age. This
+reference is what each activity's `heart_rate_zones` (in the detail endpoint)
+is computed against.
 
 ### `PATCH /users/me/profile`
 
-Update health settings. Only the fields you send are changed.
+Update health settings. Only fields present in the body are changed; a field
+sent as `null` clears it, an omitted one keeps its current value.
 
 ```json
-{ "max_heart_rate": 190, "resting_heart_rate": 60 }
+{ "date_of_birth": "1984-05-01",
+  "custom_zone_1_top_bpm": 120, "custom_zone_2_top_bpm": 140,
+  "custom_zone_3_top_bpm": 160, "custom_zone_4_top_bpm": 178 }
 ```
 
-Values are integers in bpm, 30–300. Response `200`: the updated profile.
+Heart rates and zone thresholds are integers in bpm, 30–300. Custom zones
+must be sent as a complete strictly-ascending set of four (or all cleared);
+a future date of birth, one implying an age outside 1–120, or a partial /
+non-ascending custom set is rejected with `422 VALIDATION_ERROR`. Response
+`200`: the updated profile (same shape as `GET`).
 
 ## Activities
 
@@ -297,7 +327,15 @@ Full detail for one of the caller's activities.
 
 Notes:
 - `splits` contains both `km` and `mi` rows, precomputed at import.
-- `heart_rate_zones` is `null` when the activity has no heart-rate data.
+- `heart_rate_zones` is computed **at view time** from the stored trackpoints,
+  against the **caller's zone reference** (custom boundaries > manual max heart
+  rate > age-derived — see `GET /users/me/profile`). For a custom reference the
+  zones are the explicit boundaries you set; otherwise they are percent-of-max-HR
+  bands against that reference's max heart rate. It is `null` when the caller has
+  no zone reference set, or when the activity has no heart-rate data. Changing
+  your profile changes every activity's zones immediately — nothing is re-imported.
+  The result for a given reference is kept as one live per-activity snapshot and
+  reused until the profile's reference changes (older ones are kept for history).
 - Exactly one of `running` / `cycling` / `rowing` / `strength` is populated,
   matching `sport_type`; the rest are `null`. (Other sports such as yoga,
   hiking, walking, swimming, and other carry no dedicated metrics object.)
@@ -509,11 +547,30 @@ is none. Response `200` (token fields excluded by design):
   "external_user_id": "12345",
   "display_name": "Alice Doe",
   "connected_at": "2026-08-26T12:00:00Z",
-  "last_sync_at": null
+  "last_sync_at": null,
+  "sync_since": null
 }
 ```
 
 `last_sync_at` is `null` until the first activity sync completes.
+`sync_since` is the connection's import-from floor (see below), `null` when
+there is none.
+
+### `PATCH /providers/{provider}/connection`
+
+Sets or clears the connection's import-from floor — the date from which syncs
+import activities. Request body:
+
+```json
+{ "sync_since": "2026-06-01" }
+```
+
+`sync_since` is an ISO 8601 date (`YYYY-MM-DD`), interpreted as UTC midnight
+(activities started on or after it are imported), or `null` to remove the
+floor (import everything). The floor is a user preference: it survives
+disconnecting and reconnecting. Response `200`: the updated connection.
+`404 NOT_FOUND` when there is no connection (or the provider is unknown);
+`422` for a malformed date.
 
 ### `DELETE /providers/{provider}/connection`
 
@@ -525,7 +582,12 @@ is no connection to disconnect.
 
 Pulls the user's new activities from the connected provider. The sync walks
 the provider's activity list (newest → older) and imports every activity not
-imported before — re-syncing only pulls what is new. Response `200`:
+imported before — re-syncing only pulls what is new. The run imports
+activities started at or after the walk's floor: an optional request body
+`{"since": "YYYY-MM-DD"}` (ISO 8601 date, UTC midnight) when given, else the
+connection's saved import-from floor (`PATCH …/connection`), else no floor.
+`since` is a one-off override — it does not change the saved floor.
+Response `200`:
 
 ```json
 {

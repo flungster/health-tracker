@@ -5,7 +5,6 @@ from uuid import UUID
 
 from app.imports.parsed import ParsedTrackpoint
 from app.models.activity import Activity
-from app.models.activity_hr_zone import ActivityHrZone
 from app.models.activity_split import ActivitySplit
 from app.models.activity_trackpoint import ActivityTrackpoint
 from app.models.cycling_activity import CyclingActivity
@@ -118,18 +117,6 @@ class ActivityMapper:
         ]
 
     @staticmethod
-    def create_hr_zones(activity_id: UUID, zones: HrZoneStats) -> ActivityHrZone:
-        """Build the heart-rate zone row."""
-        return ActivityHrZone(
-            activity_id=activity_id,
-            zone_1_seconds=zones.zone_1_seconds,
-            zone_2_seconds=zones.zone_2_seconds,
-            zone_3_seconds=zones.zone_3_seconds,
-            zone_4_seconds=zones.zone_4_seconds,
-            zone_5_seconds=zones.zone_5_seconds,
-        )
-
-    @staticmethod
     def create_running_activity(
         activity_id: UUID,
         avg_pace_s_per_km: float | None,
@@ -222,7 +209,7 @@ class ActivityMapper:
     def to_detail_view(
         activity: Activity,
         splits: list[ActivitySplit],
-        zones: ActivityHrZone | None,
+        zones: HrZoneStats | None,
         running: RunningActivity | None,
         cycling: CyclingActivity | None,
         rowing: RowingActivity | None,

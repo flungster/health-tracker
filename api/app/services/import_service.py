@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 from app.config import Settings
 from app.dao.activity_dao import ActivityDao
-from app.dao.activity_hr_zone_dao import ActivityHrZoneDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.sport_activity_dao import (
@@ -16,7 +15,6 @@ from app.dao.sport_activity_dao import (
     RunningActivityDao,
     StrengthActivityDao,
 )
-from app.dao.user_profile_dao import UserProfileDao
 from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import ActivityImportError, ValidationError
 from app.imports import (
@@ -49,12 +47,10 @@ class ImportService:
         activity_dao: ActivityDao,
         trackpoint_dao: ActivityTrackpointDao,
         split_dao: ActivitySplitDao,
-        hr_zone_dao: ActivityHrZoneDao,
         running_dao: RunningActivityDao,
         cycling_dao: CyclingActivityDao,
         rowing_dao: RowingActivityDao,
         strength_dao: StrengthActivityDao,
-        profile_dao: UserProfileDao,
         detector: FormatDetector,
         statistics: ActivityStatistics,
         settings: Settings,
@@ -63,12 +59,10 @@ class ImportService:
         self._activity_dao = activity_dao
         self._trackpoint_dao = trackpoint_dao
         self._split_dao = split_dao
-        self._hr_zone_dao = hr_zone_dao
         self._running_dao = running_dao
         self._cycling_dao = cycling_dao
         self._rowing_dao = rowing_dao
         self._strength_dao = strength_dao
-        self._profile_dao = profile_dao
         self._detector = detector
         self._statistics = statistics
         self._settings = settings
@@ -177,9 +171,9 @@ class ImportService:
         if not name:
             name = "Imported activity"
 
-        profile = self._profile_dao.get(user_id)
-        max_heart_rate = profile.max_heart_rate if profile is not None else None
-        stats = self._statistics.compute(parsed, max_heart_rate=max_heart_rate)
+        # Note: heart-rate zones are NOT computed here — they are relative to
+        # the viewer's profile max heart rate and are computed at view time.
+        stats = self._statistics.compute(parsed)
 
         if activity_uuid is None:
             activity_uuid = uuid4()
@@ -212,8 +206,6 @@ class ImportService:
             ActivityMapper.create_trackpoints(activity_uuid, parsed.trackpoints)
         )
         self._split_dao.add_all(ActivityMapper.create_splits(activity_uuid, stats.splits))
-        if stats.hr_zones is not None:
-            self._hr_zone_dao.add(ActivityMapper.create_hr_zones(activity_uuid, stats.hr_zones))
         self._add_sport_row(activity, sport, stats)
 
         self._unit_of_work.commit()

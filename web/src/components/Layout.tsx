@@ -35,6 +35,9 @@ export default function Layout() {
             <NavLink to="/profile" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
               Profile
             </NavLink>
+            <NavLink to="/settings" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
+              Server settings
+            </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             {user !== null && (

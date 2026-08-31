@@ -80,6 +80,7 @@ class StravaClient:
         access_token: str,
         *,
         before: int | None,
+        start_date: int | None = None,
         per_page: int = DEFAULT_PER_PAGE,
     ) -> list[dict[str, Any]]:
         """GET /athlete/activities — the user's activities, newest first.
@@ -87,11 +88,14 @@ class StravaClient:
         ``before`` walks the history backwards: only activities started
         before the unix timestamp are returned (the opaque sync cursor,
         decoded by the adapter). ``None`` for the first page (the most
-        recent activities).
+        recent activities). ``start_date`` is the walk's floor: only
+        activities started at or after the unix timestamp are returned.
         """
         params: dict[str, str] = {"per_page": str(per_page)}
         if before is not None:
             params["before"] = str(before)
+        if start_date is not None:
+            params["start_date"] = str(start_date)
         body = self._request("GET", "/athlete/activities", access_token=access_token, params=params)
         if not isinstance(body, list):
             raise ProviderUpstreamError("Unexpected Strava activity-list response.")

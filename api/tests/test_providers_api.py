@@ -241,6 +241,7 @@ class TestOauthCallback:
         assert body["display_name"] == "Alice Doe"
         assert body["last_sync_at"] is None
         assert body["connected_at"]
+        assert body["sync_since"] is None
         # Token material never leaves the API.
         assert set(body) == {
             "provider",
@@ -248,6 +249,7 @@ class TestOauthCallback:
             "display_name",
             "connected_at",
             "last_sync_at",
+            "sync_since",
         }
 
     @pytest.mark.parametrize(
@@ -391,3 +393,128 @@ class TestDisconnect:
     )
     def test_requires_authentication(self, provider_client: TestClient) -> None:
         assert provider_client.delete("/api/v1/providers/strava/connection").status_code == 401
+
+
+class TestConnectionSettings:
+    """PATCH /providers/{p}/connection: the user's import-from floor."""
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_set_the_floor_and_read_it_back(
+        self, provider_client: TestClient, register_user: Any
+    ) -> None:
+        token: str = register_user()["token"]
+        _complete_connect(provider_client, token)
+
+        response = provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "2026-06-01"},
+        )
+        assert response.status_code == 200, response.text
+        # The date is stored as UTC midnight.
+        assert response.json()["sync_since"].startswith("2026-06-01T00:00:00")
+
+        get = provider_client.get(
+            "/api/v1/providers/strava/connection", headers=_auth_headers(token)
+        )
+        assert get.json()["sync_since"].startswith("2026-06-01T00:00:00")
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_null_clears_the_floor(self, provider_client: TestClient, register_user: Any) -> None:
+        token: str = register_user()["token"]
+        _complete_connect(provider_client, token)
+        provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "2026-06-01"},
+        )
+
+        response = provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": None},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["sync_since"] is None
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_the_floor_survives_a_reconnect(
+        self, provider_client: TestClient, register_user: Any
+    ) -> None:
+        # A user preference, unlike the sync cursor: disconnect + reconnect
+        # must not reset it.
+        token: str = register_user()["token"]
+        _complete_connect(provider_client, token)
+        provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "2026-01-01"},
+        )
+
+        assert (
+            provider_client.delete(
+                "/api/v1/providers/strava/connection", headers=_auth_headers(token)
+            ).status_code
+            == 204
+        )
+        _complete_connect(provider_client, token)
+
+        get = provider_client.get(
+            "/api/v1/providers/strava/connection", headers=_auth_headers(token)
+        )
+        assert get.json()["sync_since"].startswith("2026-01-01T00:00:00")
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_without_a_connection_404s(
+        self, provider_client: TestClient, register_user: Any
+    ) -> None:
+        token: str = register_user()["token"]
+        response = provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "2026-06-01"},
+        )
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_unknown_provider_404s(self, provider_client: TestClient, register_user: Any) -> None:
+        token: str = register_user()["token"]
+        response = provider_client.patch(
+            "/api/v1/providers/garmin/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "2026-06-01"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_malformed_date_422s(self, provider_client: TestClient, register_user: Any) -> None:
+        token: str = register_user()["token"]
+        _complete_connect(provider_client, token)
+        response = provider_client.patch(
+            "/api/v1/providers/strava/connection",
+            headers=_auth_headers(token),
+            json={"sync_since": "not-a-date"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "provider_client", [pytest.param(_ok_handler(), id="ok")], indirect=True
+    )
+    def test_requires_authentication(self, provider_client: TestClient) -> None:
+        response = provider_client.patch(
+            "/api/v1/providers/strava/connection", json={"sync_since": "2026-06-01"}
+        )
+        assert response.status_code == 401

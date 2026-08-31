@@ -1,8 +1,15 @@
 """Pure statistics computed from a ParsedActivity at import time.
 
-Everything the source file does not provide (splits, heart-rate zones,
-summary values) is derived here from the raw trackpoints, so all formats
-are treated identically. This module is pure: no DB, no HTTP.
+Everything the source file does not provide (splits, summary values) is
+derived here from the raw trackpoints, so all formats are treated
+identically. This module is pure: no DB, no HTTP.
+
+Heart-rate zones are deliberately NOT computed here: a zone is relative to
+the viewer's *zone reference* (custom boundaries, or a max heart rate that is
+manual or age-derived — all profile settings), which can change after the
+import, so zones are computed at view time from the stored trackpoints (see
+``ActivityTrackpointDao.zone_seconds_for`` and ``custom_zone_seconds_for``)
+instead of being frozen at import time.
 """
 
 from collections.abc import Sequence
@@ -42,7 +49,13 @@ class SplitStats:
 
 @dataclass
 class HrZoneStats:
-    """Seconds spent in each of the five heart-rate zones."""
+    """Seconds spent in each of the five heart-rate zones.
+
+    Computed at view time against the viewer's zone reference (custom
+    boundaries > manual max heart rate > age-derived), not at import time —
+    see the module docstring. The result is kept as a versioned per-activity
+    snapshot, superseded when the reference changes.
+    """
 
     zone_1_seconds: int = 0
     zone_2_seconds: int = 0
@@ -60,7 +73,6 @@ class ActivityStats:
     heart_rate_max_bpm: int | None = None
     cadence_avg_rpm: int | None = None
     splits: list[SplitStats] = field(default_factory=list)
-    hr_zones: HrZoneStats | None = None
     running_avg_pace_s_per_km: float | None = None
     running_min_pace_s_per_km: float | None = None
     running_max_pace_s_per_km: float | None = None
@@ -72,12 +84,8 @@ class ActivityStats:
 class ActivityStatistics:
     """Derives splits, zones and summary metrics from trackpoints."""
 
-    def compute(self, activity: ParsedActivity, max_heart_rate: int | None = None) -> ActivityStats:
-        """Compute every derived statistic for a parsed activity.
-
-        ``max_heart_rate`` is the user's configured max HR (zone reference);
-        when absent the activity's own max HR is used.
-        """
+    def compute(self, activity: ParsedActivity) -> ActivityStats:
+        """Compute every derived statistic for a parsed activity."""
         points = activity.trackpoints
         stats = ActivityStats()
 
@@ -98,10 +106,6 @@ class ActivityStatistics:
 
         stats.splits = self.compute_splits(points, SplitUnit.KM, KM_METERS)
         stats.splits.extend(self.compute_splits(points, SplitUnit.MI, MILE_METERS))
-
-        zone_reference = max_heart_rate or stats.heart_rate_max_bpm
-        if zone_reference:
-            stats.hr_zones = self.compute_hr_zones(points, zone_reference)
 
         stats.running_avg_pace_s_per_km = self._overall_pace(activity)
         km_paces = [s.pace_seconds for s in stats.splits if s.split_type == SplitUnit.KM]
@@ -178,51 +182,6 @@ class ActivityStatistics:
                 )
             )
         return splits
-
-    def compute_hr_zones(
-        self, points: Sequence[ParsedTrackpoint], max_heart_rate: int
-    ) -> HrZoneStats | None:
-        """Distribute the activity's time across the five HR zones.
-
-        Each sample accounts for the time until the next sample.
-        """
-        samples = [p for p in points if p.recorded_at is not None and p.heart_rate_bpm is not None]
-        if len(samples) < 2 or max_heart_rate <= 0:
-            return None
-        zone_seconds = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        for i in range(len(samples) - 1):
-            current = samples[i]
-            following = samples[i + 1]
-            if current.recorded_at is None or following.recorded_at is None:
-                continue
-            if current.heart_rate_bpm is None:
-                continue
-            delta = int((following.recorded_at - current.recorded_at).total_seconds())
-            if delta <= 0:
-                continue
-            zone_seconds[self._zone_for(current.heart_rate_bpm, max_heart_rate)] += delta
-        if sum(zone_seconds.values()) <= 0:
-            return None
-        return HrZoneStats(
-            zone_1_seconds=zone_seconds[1],
-            zone_2_seconds=zone_seconds[2],
-            zone_3_seconds=zone_seconds[3],
-            zone_4_seconds=zone_seconds[4],
-            zone_5_seconds=zone_seconds[5],
-        )
-
-    def _zone_for(self, heart_rate: int, max_heart_rate: int) -> int:
-        """Percent-of-max-HR zone (56/64/72/80% boundaries)."""
-        percent = heart_rate / max_heart_rate
-        if percent < 0.56:
-            return 1
-        if percent < 0.64:
-            return 2
-        if percent < 0.72:
-            return 3
-        if percent <= 0.80:
-            return 4
-        return 5
 
     def _distance_series(
         self, points: Sequence[ParsedTrackpoint]

@@ -1,5 +1,6 @@
 """Data access for per-user health settings."""
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -29,18 +30,35 @@ class UserProfileDao(IntIdDao[UserProfile]):
         self.session.flush()
         return profile
 
-    def set_heart_rates(
+    def apply_health_settings(
         self,
         user_id: UUID,
+        *,
         max_heart_rate: int | None,
         resting_heart_rate: int | None,
+        date_of_birth: date | None,
+        custom_zone_1_top_bpm: int | None,
+        custom_zone_2_top_bpm: int | None,
+        custom_zone_3_top_bpm: int | None,
+        custom_zone_4_top_bpm: int | None,
     ) -> UserProfile:
-        """Set heart-rate settings, creating the profile when missing."""
+        """Write the full resolved health-settings state.
+
+        The caller (service) has already merged provided values over current
+        ones, so this simply persists the resulting state — a ``None`` here is
+        a deliberate clear. Creates the profile row when missing; flushes, and
+        the caller commits.
+        """
         profile = self.get(user_id)
         if profile is None:
             profile = UserProfile(user_id=user_id)
             self.session.add(profile)
         profile.max_heart_rate = max_heart_rate
         profile.resting_heart_rate = resting_heart_rate
+        profile.date_of_birth = date_of_birth
+        profile.custom_zone_1_top_bpm = custom_zone_1_top_bpm
+        profile.custom_zone_2_top_bpm = custom_zone_2_top_bpm
+        profile.custom_zone_3_top_bpm = custom_zone_3_top_bpm
+        profile.custom_zone_4_top_bpm = custom_zone_4_top_bpm
         self.session.flush()
         return profile

@@ -21,7 +21,11 @@ from app.http.dependencies import (
 )
 from app.models.user import User
 from app.schemas.mappers.provider_mapper import ProviderAccountMapper
-from app.schemas.requests.provider_requests import ClientConfigRequest
+from app.schemas.requests.provider_requests import (
+    ClientConfigRequest,
+    ConnectionPatchRequest,
+    SyncRequest,
+)
 from app.schemas.views.provider_views import (
     ClientConfigView,
     ConnectUrlView,
@@ -93,6 +97,22 @@ def get_connection(
     return ProviderAccountMapper.to_view(account)
 
 
+@router.patch("/{provider}/connection", response_model=ProviderConnectionView)
+def update_connection(
+    provider: str,
+    body: ConnectionPatchRequest,
+    provider_service: ProviderService = Depends(get_provider_service),
+    current_user: User = Depends(get_current_user),
+) -> ProviderConnectionView:
+    """Set or clear the user's import-from floor for a provider.
+
+    The floor (an ISO 8601 date) is what syncs import on; null removes it.
+    ``404 NOT_FOUND`` when the user has no connection for the provider.
+    """
+    account = provider_service.set_sync_floor(current_user.uuid, provider, body.sync_since)
+    return ProviderAccountMapper.to_view(account)
+
+
 @router.delete("/{provider}/connection", status_code=204)
 def disconnect_connection(
     provider: str,
@@ -107,16 +127,20 @@ def disconnect_connection(
 @router.post("/{provider}/sync", response_model=SyncResultView)
 def sync_provider(
     provider: str,
+    body: SyncRequest | None = None,
     provider_sync_service: ProviderSyncService = Depends(get_provider_sync_service),
     current_user: User = Depends(get_current_user),
 ) -> SyncResultView:
     """Pull the user's new activities from a connected provider.
 
     A large history may span several runs; each run resumes from the stored
-    cursor. Provider failures return the 502 ``PROVIDER_ERROR`` envelope,
-    with a ``Retry-After`` header when the provider rate-limited.
+    cursor. The run imports activities started at or after the walk's floor:
+    ``since`` (an ISO 8601 date) from the body when given, else the
+    connection's saved import-from floor, else no floor. Provider failures
+    return the 502 ``PROVIDER_ERROR`` envelope, with a ``Retry-After``
+    header when the provider rate-limited.
     """
-    return provider_sync_service.sync(current_user.uuid, provider)
+    return provider_sync_service.sync(current_user.uuid, provider, body.since if body else None)
 
 
 # --- Server-level client configuration (not per-user) ----------------------

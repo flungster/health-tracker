@@ -16,6 +16,16 @@ export type AuthResponseView = {
 export type ProfileView = {
   max_heart_rate: number | null;
   resting_heart_rate: number | null;
+  date_of_birth: string | null; // "YYYY-MM-DD" (calendar day)
+  custom_zone_1_top_bpm: number | null;
+  custom_zone_2_top_bpm: number | null;
+  custom_zone_3_top_bpm: number | null;
+  custom_zone_4_top_bpm: number | null;
+
+  // Computed (not stored): the zone reference currently in effect.
+  zone_source: "custom" | "max_heart_rate" | "age" | null;
+  effective_max_heart_rate: number | null; // for max_heart_rate / age references
+  age: number | null; // when zone_source is "age"
 };
 
 export type ActivitySummaryView = {
@@ -155,6 +165,15 @@ export type ProviderConnectionView = {
   display_name: string | null;
   connected_at: string;
   last_sync_at: string | null;
+  /** The import-from floor (ISO 8601 UTC), or null = import everything. */
+  sync_since: string | null;
+};
+
+export type ClientConfigView = {
+  provider: string;
+  configured: boolean;
+  client_id: string | null;
+  display_name: string | null;
 };
 
 export type SyncResultView = {

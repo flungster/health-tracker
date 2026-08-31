@@ -1,5 +1,7 @@
 """Request schemas for user accounts and authentication."""
 
+from datetime import date
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -36,8 +38,17 @@ class UserUpdateRequest(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     """Body for PATCH /api/v1/users/me/profile.
 
-    Only the provided fields are changed. Heart rates are in bpm.
+    Only the fields present in the body are changed; a field sent as ``null``
+    clears it (an omitted field keeps its current value). Heart rates and zone
+    thresholds are in bpm. Custom zones must be sent as a complete, strictly-
+    ascending set of four (or all cleared); validation is enforced in the
+    service so clients get the app error envelope.
     """
 
     max_heart_rate: int | None = Field(default=None, ge=30, le=300)
     resting_heart_rate: int | None = Field(default=None, ge=30, le=300)
+    date_of_birth: date | None = Field(default=None)
+    custom_zone_1_top_bpm: int | None = Field(default=None, ge=30, le=300)
+    custom_zone_2_top_bpm: int | None = Field(default=None, ge=30, le=300)
+    custom_zone_3_top_bpm: int | None = Field(default=None, ge=30, le=300)
+    custom_zone_4_top_bpm: int | None = Field(default=None, ge=30, le=300)

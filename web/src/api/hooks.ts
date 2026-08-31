@@ -10,6 +10,7 @@ import { ApiError, apiRequest } from "./client";
 import type {
   ActivitiesListView,
   ActivityDetailView,
+  ClientConfigView,
   ConnectUrlView,
   ProfileView,
   ProviderConnectionView,
@@ -135,10 +136,20 @@ export function useDeleteActivity() {
   });
 }
 
+export type ProfileUpdateInput = {
+  max_heart_rate: number | null;
+  resting_heart_rate: number | null;
+  date_of_birth: string | null; // "YYYY-MM-DD" or null to clear
+  custom_zone_1_top_bpm: number | null; // all four or none (server-enforced)
+  custom_zone_2_top_bpm: number | null;
+  custom_zone_3_top_bpm: number | null;
+  custom_zone_4_top_bpm: number | null;
+};
+
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { max_heart_rate: number | null; resting_heart_rate: number | null }) =>
+    mutationFn: (input: ProfileUpdateInput) =>
       apiRequest<ProfileView>("/api/v1/users/me/profile", { method: "PATCH", json: input }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["profile"] });
@@ -221,11 +232,75 @@ export function useDisconnectProvider() {
 export function useSyncProvider() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (provider: string) =>
-      apiRequest<SyncResultView>(`/api/v1/providers/${provider}/sync`, { method: "POST" }),
-    onSuccess: (_data, provider) => {
+    mutationFn: ({ provider, since }: { provider: string; since?: string }) =>
+      apiRequest<SyncResultView>(`/api/v1/providers/${provider}/sync`, {
+        method: "POST",
+        // No body = use the connection's saved import-from floor (or none).
+        json: since !== undefined && since !== "" ? { since } : undefined,
+      }),
+    onSuccess: (_data, { provider }) => {
       void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
       void queryClient.invalidateQueries({ queryKey: ["activities"] });
+    },
+  });
+}
+
+export function useUpdateProviderConnection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, syncSince }: { provider: string; syncSince: string | null }) =>
+      apiRequest<ProviderConnectionView>(`/api/v1/providers/${provider}/connection`, {
+        method: "PATCH",
+        json: { sync_since: syncSince },
+      }),
+    onSuccess: (_data, { provider }) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-connection", provider] });
+    },
+  });
+}
+
+export function useProviderConfig(provider: string) {
+  return useQuery({
+    queryKey: ["provider-config", provider],
+    queryFn: () => apiRequest<ClientConfigView>(`/api/v1/providers/${provider}/client/config`),
+  });
+}
+
+export type ProviderConfigInput = {
+  client_id: string;
+  /** Blank = keep the stored secret (it can never be read back). */
+  client_secret: string;
+  display_name: string;
+};
+
+export function useSaveProviderConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, input }: { provider: string; input: ProviderConfigInput }) =>
+      apiRequest<ClientConfigView>(`/api/v1/providers/${provider}/client/config`, {
+        method: "PUT",
+        json: {
+          client_id: input.client_id,
+          client_secret: input.client_secret === "" ? null : input.client_secret,
+          display_name: input.display_name === "" ? null : input.display_name,
+        },
+      }),
+    onSuccess: (_data, { provider }) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-config", provider] });
+      // The configured flag on /providers changed: refresh the list too.
+      void queryClient.invalidateQueries({ queryKey: ["providers"] });
+    },
+  });
+}
+
+export function useDeleteProviderConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: string) =>
+      apiRequest<void>(`/api/v1/providers/${provider}/client/config`, { method: "DELETE" }),
+    onSuccess: (_data, provider) => {
+      void queryClient.invalidateQueries({ queryKey: ["provider-config", provider] });
+      void queryClient.invalidateQueries({ queryKey: ["providers"] });
     },
   });
 }

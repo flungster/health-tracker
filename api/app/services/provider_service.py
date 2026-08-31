@@ -7,6 +7,7 @@ user is identified through the signed ``state`` token issued at connect time
 """
 
 import logging
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from app.dao.provider_account_dao import ProviderAccountDao
@@ -109,6 +110,31 @@ class ProviderService:
         account = self._account_dao.get_for_user(user_uuid, provider)
         if account is None:
             raise NotFoundError(f"No {provider} connection for this account.")
+        return account
+
+    def set_sync_floor(self, user_uuid: UUID, provider: str, floor: date | None) -> ProviderAccount:
+        """Set (or clear, when ``floor`` is None) the user's import-from floor.
+
+        The floor is stored as UTC midnight: syncs import activities started
+        on or after it. It is a user preference — it survives reconnects,
+        unlike the sync cursor. Raises NotFoundError when the user has no
+        active connection for the provider.
+        """
+        account = self._account_dao.get_for_user(user_uuid, provider)
+        if account is None:
+            raise NotFoundError(f"No {provider} connection for this account.")
+        if floor is None:
+            account.sync_since = None
+        else:
+            account.sync_since = datetime(floor.year, floor.month, floor.day, tzinfo=UTC)
+        self._account_dao.save(account)
+        self._unit_of_work.commit()
+        logger.info(
+            "User %s set the %s import-from floor to %s",
+            user_uuid,
+            provider,
+            floor.isoformat() if floor is not None else "none",
+        )
         return account
 
     def disconnect(self, user_uuid: UUID, provider: str) -> None:

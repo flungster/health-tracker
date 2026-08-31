@@ -53,6 +53,7 @@ export default function ActivityDetailPage() {
 
   const trackpoints = trackpointsData?.items ?? [];
   const hasGps = trackpoints.some((point) => point.lat !== null && point.lon !== null);
+  const hasHeartRate = trackpoints.some((point) => point.heart_rate_bpm !== null);
 
   function startRename() {
     if (activity !== undefined) {
@@ -188,6 +189,15 @@ export default function ActivityDetailPage() {
           </h2>
           {activity.heart_rate_zones !== null ? (
             <HrZonesChart zones={activity.heart_rate_zones} />
+          ) : hasHeartRate ? (
+            <p className="py-8 text-center text-sm text-ink-muted">
+              This activity has heart-rate data, but zones are relative to your
+              own max heart rate.{" "}
+              <Link to="/profile" className="text-accent underline">
+                Set it in your profile
+              </Link>{" "}
+              to see time in zones.
+            </p>
           ) : (
             <p className="py-8 text-center text-sm text-ink-muted">
               No heart-rate data recorded.

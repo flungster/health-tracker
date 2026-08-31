@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.dao.activity_dao import ActivityDao
-from app.dao.activity_hr_zone_dao import ActivityHrZoneDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_type_dao import ActivityTypeDao
+from app.dao.activity_zone_snapshot_dao import ActivityZoneSnapshotDao
 from app.dao.provider_account_dao import ProviderAccountDao
 from app.dao.provider_credentials_dao import ProviderCredentialDao
 from app.dao.provider_dao import ProviderDao
@@ -75,7 +75,8 @@ def get_activity_service(
         activity_dao=ActivityDao(session),
         trackpoint_dao=ActivityTrackpointDao(session),
         split_dao=ActivitySplitDao(session),
-        hr_zone_dao=ActivityHrZoneDao(session),
+        profile_dao=UserProfileDao(session),
+        snapshot_dao=ActivityZoneSnapshotDao(session),
         running_dao=RunningActivityDao(session),
         cycling_dao=CyclingActivityDao(session),
         rowing_dao=RowingActivityDao(session),
@@ -94,12 +95,10 @@ def get_import_service(
         activity_dao=ActivityDao(session),
         trackpoint_dao=ActivityTrackpointDao(session),
         split_dao=ActivitySplitDao(session),
-        hr_zone_dao=ActivityHrZoneDao(session),
         running_dao=RunningActivityDao(session),
         cycling_dao=CyclingActivityDao(session),
         rowing_dao=RowingActivityDao(session),
         strength_dao=StrengthActivityDao(session),
-        profile_dao=UserProfileDao(session),
         detector=build_default_detector(),
         statistics=ActivityStatistics(),
         settings=settings,
