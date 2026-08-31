@@ -8,9 +8,10 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
 .PHONY: install
-install: ## Install Python and Node dependencies
+install: ## Install Python and Node dependencies (and enable git hooks)
 	uv sync --directory api
 	cd web && npm install
+	git config core.hooksPath scripts/git-hooks
 
 .PHONY: migrate
 migrate: ## Apply database migrations (dbmate up)

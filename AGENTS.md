@@ -187,6 +187,24 @@ invocations in docs instead.
 - Never commit `.env`, secrets, or generated upload data. Use `.env.example`.
 - Docker images: multi-stage, pinned base images, non-root user for the API.
 
+## Commit conventions
+
+- **AI co-author attribution is mandatory.** Every commit containing work
+  generated with AI assistance carries this exact trailer as a footer line —
+  GitHub renders it as a co-author, and the subject/body stay free of
+  attribution text:
+
+      Co-authored-by: Qwen3.8-27B via opencode (LM Studio) <qwen@lmstudio.local>
+
+  A purely manual commit carries no AI trailer and instead declares itself
+  with a `Human-only:` footer line. The enforced hook rejects commits that
+  have neither, so attribution can never be dropped silently; `git log` then
+  lists every AI-touched (or explicitly human-only) commit. If the assistant
+  model or harness changes, update this line and `scripts/git-hooks/commit-msg`
+  together.
+- The hook lives in the repo at `scripts/git-hooks/commit-msg`; `make install`
+  enables it once per clone via `git config core.hooksPath scripts/git-hooks`.
+
 ## Definition of done (per feature)
 
 1. Works end-to-end in `make up` (docker) — not just local dev.

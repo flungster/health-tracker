@@ -1,0 +1,30 @@
+#!/bin/sh
+# Enforces AI co-author attribution (see AGENTS.md "Commit conventions").
+# A commit message must carry either:
+#   Co-authored-by: Qwen3.8-27B via opencode (LM Studio) <qwen@lmstudio.local>
+# (work generated with AI assistance), or the explicit marker:
+#   Human-only:
+# (a purely manual commit). Anything else is rejected.
+
+msg="$1"
+
+trailer='Co-authored-by: Qwen3.8-27B via opencode (LM Studio) <qwen@lmstudio.local>'
+
+if grep -Fqx "$trailer" "$msg"; then
+    exit 0
+fi
+
+if grep -Eqx 'Human-only:.*' "$msg"; then
+    exit 0
+fi
+
+{
+    echo "commit-msg: missing AI co-author attribution."
+    echo ""
+    echo "Add this footer line for work generated with AI assistance:"
+    echo ""
+    echo "  $trailer"
+    echo ""
+    echo "or 'Human-only:' for a purely manual commit."
+} >&2
+exit 1
