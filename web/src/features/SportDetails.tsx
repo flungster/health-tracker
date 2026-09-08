@@ -6,7 +6,8 @@ import type {
   RunningMetricsView,
   StrengthMetricsView,
 } from "../api/types";
-import { formatPace } from "../format";
+import { formatPace, formatWeight, paceSuffix } from "../format";
+import { useUnits } from "../units/context";
 import { Card } from "../components/Ui";
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -19,13 +20,14 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function RunningDetail({ running }: { running: RunningMetricsView }) {
+  const { units } = useUnits();
   return (
     <Card className="p-5">
       <h2 className="text-base font-semibold text-ink">Running</h2>
       <dl className="mt-3 grid grid-cols-3 gap-3">
-        <Metric label="Avg pace" value={formatPace(running.avg_pace_s_per_km) + " /km"} />
-        <Metric label="Best pace" value={formatPace(running.min_pace_s_per_km) + " /km"} />
-        <Metric label="Slowest pace" value={formatPace(running.max_pace_s_per_km) + " /km"} />
+        <Metric label="Avg pace" value={formatPace(running.avg_pace_seconds) + " " + paceSuffix(units)} />
+        <Metric label="Best pace" value={formatPace(running.min_pace_seconds) + " " + paceSuffix(units)} />
+        <Metric label="Slowest pace" value={formatPace(running.max_pace_seconds) + " " + paceSuffix(units)} />
       </dl>
     </Card>
   );
@@ -76,16 +78,14 @@ export function RowingDetail({ rowing }: { rowing: RowingMetricsView }) {
 }
 
 export function StrengthDetail({ strength }: { strength: StrengthMetricsView }) {
+  const { units } = useUnits();
   return (
     <Card className="p-5">
       <h2 className="text-base font-semibold text-ink">Strength</h2>
       <dl className="mt-3 grid grid-cols-3 gap-3">
         <Metric label="Exercises" value={`${strength.total_exercises}`} />
         <Metric label="Sets" value={`${strength.total_sets}`} />
-        <Metric
-          label="Total volume"
-          value={strength.total_weight_kg !== null ? `${Math.round(strength.total_weight_kg)} kg` : "—"}
-        />
+        <Metric label="Total volume" value={formatWeight(strength.total_weight, units)} />
       </dl>
     </Card>
   );

@@ -1,6 +1,6 @@
 """Data access for per-user health settings."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -41,13 +41,16 @@ class UserProfileDao(IntIdDao[UserProfile]):
         custom_zone_2_top_bpm: int | None,
         custom_zone_3_top_bpm: int | None,
         custom_zone_4_top_bpm: int | None,
+        imperial_units_enabled_at: datetime | None,
     ) -> UserProfile:
         """Write the full resolved health-settings state.
 
         The caller (service) has already merged provided values over current
         ones, so this simply persists the resulting state — a ``None`` here is
-        a deliberate clear. Creates the profile row when missing; flushes, and
-        the caller commits.
+        a deliberate clear. For units, the caller has already translated the
+        request value into the stored form: a UTC timestamp (imperial in
+        effect) or ``None`` (metric). Creates the profile row when missing;
+        flushes, and the caller commits.
         """
         profile = self.get(user_id)
         if profile is None:
@@ -60,5 +63,6 @@ class UserProfileDao(IntIdDao[UserProfile]):
         profile.custom_zone_2_top_bpm = custom_zone_2_top_bpm
         profile.custom_zone_3_top_bpm = custom_zone_3_top_bpm
         profile.custom_zone_4_top_bpm = custom_zone_4_top_bpm
+        profile.imperial_units_enabled_at = imperial_units_enabled_at
         self.session.flush()
         return profile

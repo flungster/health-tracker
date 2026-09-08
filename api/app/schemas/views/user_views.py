@@ -47,3 +47,8 @@ class ProfileView(BaseModel):
     zone_source: str | None  # "custom" / "max_heart_rate" / "age", or null
     effective_max_heart_rate: int | None  # the max HR used, for age/max_heart_rate
     age: int | None  # current derived age (from date_of_birth), for display
+
+    # Derived from imperial_units_enabled_at: "imperial" when set, else
+    # "metric". Display-only — activity values are converted to this system at
+    # read time (M14b). Always present, never null.
+    units_system: str  # "metric" | "imperial"

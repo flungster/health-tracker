@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.models.user import User
 from app.models.user_profile import UserProfile
+from app.schemas.units import units_for
 from app.schemas.views.user_views import ProfileView, UserView
 from app.services.zone_reference import ZoneReference
 
@@ -44,6 +45,17 @@ class UserMapper:
         )
 
     @staticmethod
+    def units_system_for(profile: UserProfile | None) -> str:
+        """The display unit system for a profile (delegates to app.schemas.units).
+
+        Derived from ``imperial_units_enabled_at``: set = imperial (in effect
+        since that instant), unset or no profile row = metric. Always one of
+        the two system strings, never null.
+        """
+        instant = profile.imperial_units_enabled_at if profile is not None else None
+        return units_for(instant).value
+
+    @staticmethod
     def to_profile_view(profile: UserProfile, reference: ZoneReference | None) -> ProfileView:
         """Map an ORM profile (plus its resolved zone reference) to a view."""
         return ProfileView(
@@ -57,6 +69,7 @@ class UserMapper:
             zone_source=(reference.source.value if reference is not None else None),
             effective_max_heart_rate=reference.max_heart_rate if reference is not None else None,
             age=(reference.age if reference is not None else None),
+            units_system=UserMapper.units_system_for(profile),
         )
 
     @staticmethod
@@ -73,4 +86,5 @@ class UserMapper:
             zone_source=None,
             effective_max_heart_rate=None,
             age=None,
+            units_system="metric",  # no profile row -> the default system
         )

@@ -32,6 +32,9 @@ to Done in the overview.
 | M13a | User-configurable zones (I): profile settings (date of birth + custom tops), `zone_sources` + versioned snapshots, reference resolution in the profile view | Done | 2026-08-30 |
 | M13b | User-configurable zones (II): detail computation against the resolved reference + versioned snapshots with supersede-on-change | Done | 2026-08-31 |
 | M13c | User-configurable zones (III): profile UI — date of birth + custom zone tops, effective-reference display | Done | 2026-08-31 |
+| M14a | Per-user unit system (I): profile setting — `imperial_units_enabled_at` timestamp + derived `units_system` on the request/view (no conversion yet) | Done | 2026-09-05 |
+| M14b | Per-user unit system (II): API-side conversion — neutral view fields + `units` flag, imperial mi/ft/s-per-mi/lb/mph (exact factors), splits filtered per system | Done | 2026-09-05 |
+| M14c | Per-user unit system (III): frontend — units context (localStorage + profile sync), unit-aware display everywhere, Profile toggle | Done | 2026-09-05 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -40,6 +43,223 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M14c — Per-user unit system (III): frontend display + the toggle (2026-09-05)
+
+Final slice of M14: the UI now renders unit-bearing values in the caller's
+display system and offers a **Units of measurement** card on the Profile page.
+This completes M14 end-to-end — metric/imperial is a per-user, server-stored
+preference that converts everything at read time and never touches stored data.
+
+**Decisions (locked in the planning session):**
+- One `UnitsProvider` owns the display system for the whole app. It **seeds from
+  localStorage** (`health-tracker.units`, metric default) so the correct units
+  pre-paint before any request, then **follows the profile** (`units_system`) —
+  which is the source of truth and what every other tab/profile-save re-syncs to.
+- The toggle **optimistically flips** state + localStorage on save success, so the
+  whole UI (feed cards, detail stats, splits, sport metrics) switches instantly;
+  the `["profile"]` invalidation re-syncs it. No live cross-tab sync — a later
+  load re-reads the profile (documented in usage.md).
+
+**Gates:** `make lint` green (ruff, mypy 102 api files — unchanged this slice;
+tsc + eslint on the new/changed web code) · `make test` green (**265 passed**,
+API unchanged; the frontend is gated by tsc/eslint) · web image rebuilt and the
+units UI confirmed present in the served bundle (`health-tracker.units`, "Units of
+measurement", per-kilometre/per-mile). No backend change in this slice, so no DB
+verification was needed.
+
+### Code (web only)
+- `src/units/context.tsx` (new): `UnitsProvider` + `useUnits()`. Seeded from
+  localStorage, synced to the profile (the query is enabled only while
+  authenticated), and `setUnits` writes both state and localStorage. Mounted in
+  `main.tsx` inside the providers (needs auth + query client).
+- `src/format.ts`: `formatDistance` / new `formatElevation`, `formatWeight`, and
+  `paceSuffix` all take a `Units` argument — metric keeps its exact prior output,
+  imperial adds miles (1 dp), whole feet/lb with grouping, and a `/mi` suffix.
+- Display sites now read `useUnits()`: the feed card's distance, the detail stat
+  grid (distance / elev gain / avg pace), running paces and strength volume in the
+  sport panels. `SplitsTable` is simplified to a single table — it renders whatever
+  system the API returned (M14b already filters server-side), keyed off `split_type`.
+- `src/api/hooks.ts`: `useProfile` gained an optional `enabled`; `ProfileUpdateInput`
+  fields became individually omittable (matching the server's "omitted = keep" rule)
+  and gained `units_system?: Units`.
+- `src/pages/ProfilePage.tsx`: a **Units of measurement** card with metric/imperial
+  buttons. Picking one PATCHes only `units_system` and flips the UI on success; a
+  separate mutation instance keeps its pending state off the heart-rate form.
+
+### Docs
+`usage.md`: a new *Units of measurement* section (what converts, what doesn't —
+calories/HR/cadence/power/time never do; rowing's 500 m split stays in metres —
+and the "stored data is never changed" guarantee), plus a Profile bullet and an
+updated Splits note (one table in your system; sub-tenth-of-a-unit edge).
+
+**M14 is complete.** All three slices are Done; the unit system ships as a
+per-user, read-time-converted preference with no schema migration beyond M14a's.
+
+## M14b — Per-user unit system (II): API-side conversion + view shape change (2026-09-05)
+
+Second slice of M14: activity views now convert to the caller's display unit
+system in the API (never the frontend). Unit-bearing view fields carry neutral
+names (`distance`, `elevation_gain`, …); each list/detail/trackpoints response
+carries a `units` flag saying which system its values are in. Imperial users get
+miles / feet / s-per-mile / lb / mph using **exact** factors (the API sends
+unrounded values — rounding is a client concern, M14c). Splits are filtered to
+the caller's system server-side (both units were already precomputed at import).
+**Zero schema changes in this slice — storage stays SI**; the TS types moved in
+lockstep so `make up` stayed green, and display logic + the toggle are M14c.
+
+**Decisions (locked in the planning session):**
+- View shape: unit-neutral fields + a `units` flag on `ActivitiesListView`,
+  `ActivityDetailView` and `TrackpointsView`. No reference table (no column
+  stores the value); `SplitsView` is unchanged — rows self-describe via their
+  existing `split_type`.
+- Conversions: distance m→mi (`/1609.344`), elevation/altitude m→ft
+  (`/0.3048`), running pace s/km→s/mi (`×1.609344`), weight kg→lb
+  (`/0.45359237`), speed m/s→mph — all exact definitions, so no information is
+  lost and toggling back restores the stored value *exactly*. Never converted:
+  `calories_kcal`, power W, bpm/rpm/spm, durations; rowing's
+  `split_500m_seconds` stays 500-m-based in both systems (the standard rowing
+  pace metric). Trackpoints convert too (altitude/speed) for a consistent API.
+- Splits: the service returns only the caller's system's precomputed rows; an
+  activity shorter than a tenth of one unit has none for that system (the
+  documented edge — an imperial caller sees no splits on a ~130 m activity).
+
+**Gates:** `make lint` green (ruff, mypy 102 api files — new `app/schemas/units.py`
+— tsc, eslint) · `make test` green (**265 passed** — +13 new: 10 pure conversion
+tests, 3 imperial API tests) · no schema change (nothing to verify up/down — the
+M14a migration already landed) · api image rebuilt; live check passed (below).
+
+### Code
+- `app/schemas/units.py` (new, pure): `UnitSystem` enum, `units_for(instant)` —
+  the single derivation point (the user mapper now delegates to it) — and the six
+  `display_*` conversion helpers (exact factors, None passthrough). Unit-tested in
+  isolation.
+- Views: field renames per the plan (`distance_m`→`distance`, `elevation_gain_m`
+  →`elevation_gain`, running `_s_per_km`→`_seconds`, `total_weight_kg`
+  →`total_weight`, trackpoint `_m`/`_mps`→`altitude`/`speed`) + `units` on the
+  three list/detail/trackpoints views. Docstrings spell out "km when metric, mi
+  otherwise".
+- `ActivityMapper`: the view methods take a `UnitSystem` and call the helpers;
+  `to_detail_view` gained it as its last parameter.
+- `ActivityService`: resolves the caller's system per request — `get_detail` now
+  loads the profile **once** and derives both the zone reference *and* the unit
+  system from it (no extra query), filters splits to that system (`_splits_for`);
+  `list_for_user` returns `(activities, total, units)`; `get_trackpoints` returns
+  `(points, units)`. The route layer passes the flag through unchanged.
+
+### Tests (13 new)
+- `test_units.py` (+10): `units_for(None)`/set; None passthrough on every
+  converter; metric identity; the exact `x/x == 1.0` identities (one mile in
+  meters → exactly 1 mi; one foot, one pound); a distance round-trip at
+  `rel=1e-12`; pace scales by the exact mile/km ratio (300 s/km → 482.8032
+  s/mi); speed→mph and kg→lb at `rel=1e-9`.
+- `TestUnitsImperial` in `test_activities.py` (+3): imperial converts the detail,
+  list feed and trackpoints against exact expected values captured from a metric
+  read (distance/elevation/pace + per-sample altitude/speed, same order); toggling
+  back to metric restores the stored value **exactly** (equality, not approx —
+  proof storage was never touched); and the sub-tenth-of-a-mile edge (a ~132 m
+  inline GPX) has km rows in metric but **no** splits at all in imperial. (The FIT
+  fixture can't demo that edge: its trackpoint path is longer than its summary
+  distance — noted in the test.)
+
+### Live check (api rebuilt on :9090)
+Health ok, version unchanged (0.3.0). Fresh smoke user uploads `run_sample.gpx`:
+metric baseline — distance 5054.33 m, elevation gain 120 m, avg pace 292.8 s/km,
+splits km-only · PATCH imperial → `units: "imperial"` — distance 3.1406 mi,
+elevation gain 393.7 ft, avg pace 471.2 s/mi, splits mi-only (n=4); the list feed
+converts too; a trackpoint altitude reads 131.23 ft for its stored 40 m · PATCH
+back to metric → the exact stored values (5054.33 m, km rows) return — no drift.
+
+### Docs
+`api.md`: an Activities "Unit systems" preamble (the conversion table + the
+never-converted list), updated examples for list/detail/trackpoints/splits, and a
+note on per-system split filtering incl. the tenth-of-a-unit edge · `data-model.md`
+unchanged (the columns stay SI; the M14a row already records that conversion is a
+view-layer concern). No `usage.md` change yet — the user-facing toggle lands in
+M14c.
+
+**Next: M14c — frontend unit-aware display + the toggle**: a units context
+seeded from localStorage (metric default) and synced on profile save, unit-aware
+`format.ts`, label updates across feed/detail/splits/charts, and the "Units of
+measurement" card on the Profile page.
+
+## M14a — Per-user unit system (I): the setting, stored as a timestamp + profile API surface (2026-09-05)
+
+First slice of M14 (metric/imperial display units). A user can now choose a
+display unit system on their profile. It is stored as **a timestamp, not a
+boolean** — `user_profiles.imperial_units_enabled_at`: NULL = metric (the
+default), set = imperial in effect *since* that UTC instant — so the column
+answers both "is it on?" and "when was it enabled?". This slice is **setting +
+API surface only: no value conversion yet** (M14b) and no UI (M14c).
+
+**Decisions:**
+- One nullable timestamp, two states. Toggling back to metric clears the column;
+  the last enable instant is intentionally dropped (a second column could be added
+  later if history ever matters). No boolean anywhere.
+- `PATCH /users/me/profile` gains optional `units_system: "metric" | "imperial"`
+  following the repo's per-field semantics — omitted = keep; but because metric *is*
+  the default, both `"metric"` and an explicit `null` clear back to it (no third
+  state exists). Any other value → 422 `VALIDATION_ERROR`.
+- `ProfileView.units_system` is **derived** (`"imperial"` when the timestamp is set,
+  else `"metric"`), never null. The raw instant stays queryable in the DB; it is not
+  exposed through any API (the setting's "when" is a data-level question).
+- No reference table: no column stores the value, so the enum-like-column rule does
+  not trigger; the request uses a `Literal`, the view a derived string.
+- **Storage stays SI.** No activity row is touched by this feature — conversion to the
+  user's display system happens at the API view layer (M14b).
+
+**Gates:** `make lint` green (ruff, mypy 101 api files, tsc, eslint) · `make test`
+green (**250 passed** — +8 new: 6 profile API cases, 2 column DAO tests) · migration
+verified up/down/up on a fresh scratch DB (`ht_m14a_verify`, dropped after) · live
+stack migrated in place, api image rebuilt; live check passed (below).
+
+### Migration
+`20260905000001_imperial_units_setting.sql` — `user_profiles.imperial_units_enabled_at
+timestamptz NULL` + column comment; down drops the column. Verified: fresh DB → up
+(all migrations) → shape checked (timestamptz, nullable, comment present) → down 1
+(column gone) → up (column back).
+
+### Code
+- `UserProfile` model: the nullable timestamptz column + docstring note (display-only,
+  storage stays SI).
+- `UserProfileDao.apply_health_settings` gains the required kwarg — its contract is
+  unchanged (full resolved state; `None` = deliberate clear). **Caught by the new
+  tests:** the first draft accepted the parameter without persisting it.
+- `ProfileUpdateRequest.units_system: Literal["metric", "imperial"] | None`; the
+  service maps it (provided `"imperial"` → `now(UTC)`; explicit `null`/`"metric"` →
+  clear; omitted → keep) — written in the same per-field style as its siblings.
+- `UserMapper.units_system_for(profile | None)` (the one derivation point) + the view
+  field on both profile-view paths.
+
+### Tests (8 new)
+- `test_users.py` (+6): the default metric is pinned by `EMPTY_PROFILE`'s exact-shape
+  assertion (every profile test now carries it) · imperial round-trip + re-read, with
+  all other fields untouched · reset via `"metric"` and via `null` (same two-state
+  operation) · omitted field keeps imperial while updating max HR · unknown value →
+  422 `VALIDATION_ERROR` · and the "when" case: reading
+  `imperial_units_enabled_at` straight from the DB — a fresh UTC instant after enabling,
+  NULL again after resetting.
+- `test_user_profile_dao.py` (new file, +2): a fixed instant round-trips through
+  `apply_health_settings` (including row creation on first write) and a deliberate clear
+  returns the column to NULL; a user with no profile row reads as metric.
+
+### Live check (api rebuilt on :9090)
+Health ok, version unchanged (0.3.0). Fresh smoke user: GET profile → `units_system`
+"metric" · PATCH `"imperial"` → 200 "imperial", persists on re-read · DB column stamped
+`2026-09-06T05:16Z` (UTC) · PATCH `"metric"` → "metric", column NULL · explicit `null`
+resets identically · unknown value 422s.
+
+### Docs
+`data-model.md`: `user_profiles` column row + migration table row (noting storage stays
+SI) · `api.md`: profile GET (derived field) and PATCH (`units_system` semantics, incl.
+the null = reset rule). No UI change yet (M14c).
+
+**Next: M14b — API-side conversion + view shape change**: unit-neutral field names
+(`distance`, `elevation_gain`, …) with a `units` flag on the list/detail/trackpoints
+views; imperial users get miles / feet / s-per-mile / lb (exact factors, no rounding in
+the API); splits are filtered to the user's system server-side (both precomputed units
+already exist). TS types move in lockstep so `make up` stays green; display logic and
+the toggle land in M14c.
 
 ## M13c — User-configurable heart-rate zones (III): profile UI for the zone reference (2026-08-31)
 

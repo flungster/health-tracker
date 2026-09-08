@@ -26,8 +26,10 @@ from app.models.cycling_activity import CyclingActivity
 from app.models.rowing_activity import RowingActivity
 from app.models.running_activity import RunningActivity
 from app.models.strength_activity import StrengthActivity
+from app.models.user_profile import UserProfile
 from app.schemas.mappers.activity_zone_snapshot_mapper import ActivityZoneSnapshotMapper
-from app.services.activity_stats import HrZoneStats
+from app.schemas.units import UnitSystem, units_for
+from app.services.activity_stats import HrZoneStats, SplitUnit
 from app.services.zone_reference import ZoneReference, ZoneSource, resolve_zone_reference
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ ActivityDetail = tuple[
     CyclingActivity | None,
     RowingActivity | None,
     StrengthActivity | None,
+    UnitSystem,  # the caller's display system; splits are already filtered to it
 ]
 
 
@@ -74,11 +77,15 @@ class ActivityService:
         self._rowing_dao = rowing_dao
         self._strength_dao = strength_dao
 
-    def list_for_user(self, user_id: UUID, limit: int, offset: int) -> tuple[list[Activity], int]:
-        """A page of the user's activities (newest first) plus the total."""
+    def list_for_user(
+        self, user_id: UUID, limit: int, offset: int
+    ) -> tuple[list[Activity], int, UnitSystem]:
+        """A page of the user's activities (newest first), plus the total and the
+        caller's display unit system — unit-bearing view values are converted
+        to it at mapping time (storage stays SI)."""
         activities = self._activity_dao.list_for_user(user_id, limit, offset)
         total = self._activity_dao.count_for_user(user_id)
-        return activities, total
+        return activities, total, self._units_for(user_id)
 
     def get_detail(self, user_id: UUID, activity_id: UUID) -> ActivityDetail:
         """An activity with all its derived rows.
@@ -91,19 +98,39 @@ class ActivityService:
         profile's reference changes, at which point a fresh computation
         supersedes it (the old row is kept for history). Raises NotFoundError
         when the activity is missing or not the caller's.
+
+        Splits and unit-bearing values are presented in the caller's display
+        unit system (the last tuple element): only that system's precomputed
+        split rows are returned — km for metric, mi for imperial (an activity
+        shorter than a tenth of one unit has none), and the mapper converts
+        distance/elevation/pace/weight. Storage is never touched.
         """
         activity = self._require(user_id, activity_id)
+        profile = self._profile_dao.get(user_id)
+        units = units_for(profile.imperial_units_enabled_at if profile is not None else None)
         return (
             activity,
-            self._split_dao.list_for_activity(activity_id),
-            self._zones_for(user_id, activity_id),
+            self._splits_for(activity_id, units),
+            self._zones_for(profile, activity_id),
             self._running_dao.get_for_activity(activity_id),
             self._cycling_dao.get_for_activity(activity_id),
             self._rowing_dao.get_for_activity(activity_id),
             self._strength_dao.get_for_activity(activity_id),
+            units,
         )
 
-    def _zones_for(self, user_id: UUID, activity_id: UUID) -> HrZoneStats | None:
+    def _units_for(self, user_id: UUID) -> UnitSystem:
+        """The caller's display unit system (metric when there is no profile)."""
+        profile = self._profile_dao.get(user_id)
+        return units_for(profile.imperial_units_enabled_at if profile is not None else None)
+
+    def _splits_for(self, activity_id: UUID, units: UnitSystem) -> list[ActivitySplit]:
+        """The precomputed splits of one system only (km for metric, mi otherwise)."""
+        wanted = SplitUnit.MI if units is UnitSystem.IMPERIAL else SplitUnit.KM
+        splits = self._split_dao.list_for_activity(activity_id)
+        return [split for split in splits if split.split_type == wanted.value]
+
+    def _zones_for(self, profile: UserProfile | None, activity_id: UUID) -> HrZoneStats | None:
         """The caller's view of the activity's zones.
 
         Resolves the caller's zone reference (custom > manual max HR > age;
@@ -112,7 +139,6 @@ class ActivityService:
         reference, otherwise recomputed from the trackpoints and stored as a
         fresh (superseding) snapshot. None also when there is no HR timeline.
         """
-        profile = self._profile_dao.get(user_id)
         reference = resolve_zone_reference(profile, date.today())
         if reference is None:
             return None
@@ -178,10 +204,14 @@ class ActivityService:
         self._snapshot_dao.add(snapshot)
         self._unit_of_work.commit()
 
-    def get_trackpoints(self, user_id: UUID, activity_id: UUID) -> list[ActivityTrackpoint]:
-        """All samples of the activity, in recorded order."""
+    def get_trackpoints(
+        self, user_id: UUID, activity_id: UUID
+    ) -> tuple[list[ActivityTrackpoint], UnitSystem]:
+        """All samples of the activity, in recorded order — plus the caller's
+        display unit system (altitude/speed are converted to it at mapping)."""
         self._require(user_id, activity_id)
-        return self._trackpoint_dao.list_for_activity(activity_id)
+        points = self._trackpoint_dao.list_for_activity(activity_id)
+        return points, self._units_for(user_id)
 
     def update_for_user(
         self,

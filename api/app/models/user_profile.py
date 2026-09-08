@@ -1,9 +1,9 @@
 """Per-user health settings model (1:1 with users)."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, ForeignKey, Integer, Uuid
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import IntIdModel, TimestampMixin
@@ -17,6 +17,12 @@ class UserProfile(IntIdModel, TimestampMixin):
         strictly-ascending set of four; NULL when not in use);
       * ``max_heart_rate`` — a manually entered max HR;
       * ``date_of_birth`` — the age-derived max HR is 220 - current_age.
+
+    Display preference:
+      * ``imperial_units_enabled_at`` — when the user enabled imperial display
+        units (NULL = metric, the default). A timestamp rather than a boolean:
+        it answers both "is imperial on?" and "since when?". Display-only —
+        activity data stays stored in SI units.
     """
 
     __tablename__ = "user_profiles"
@@ -34,6 +40,9 @@ class UserProfile(IntIdModel, TimestampMixin):
     custom_zone_2_top_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     custom_zone_3_top_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     custom_zone_4_top_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    imperial_units_enabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     def __repr__(self) -> str:
         return f"UserProfile(user_id={self.user_id})"

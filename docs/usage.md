@@ -59,14 +59,28 @@ Clicking an activity opens its detail page:
   hidden.
 - **Route map** — the GPS route on an OpenStreetMap map, shown only when the
   activity has GPS points.
-- **Splits** — a per-kilometre table and (where relevant) a per-mile table,
-  each row showing split time, pace, and — only when recorded — average heart
-  rate and cadence.
+- **Splits** — one table in your display unit system (per-kilometre or
+  per-mile), each row showing split time, pace, and — only when recorded —
+  average heart rate and cadence. (An activity shorter than a tenth of one unit
+  has no splits for that system.)
 - **Heart rate** — a line chart of heart rate across the activity.
 - **Time in heart-rate zones** — a bar chart of the seconds spent in each of
   the five zones (see below; needs a zone reference set on your profile).
 - **Sport metrics** — a panel for the activity's sport (running pace, cycling
   power, rowing stroke rate / 500 m split, strength volume).
+
+## Units of measurement
+
+Everything distance-related is shown in your **display unit system** — metric or
+imperial, chosen on the **Profile** page. It is per-user and stored on your
+profile: distances (m/km vs miles), elevation gain, running pace (/km vs /mi),
+and strength volume (kg vs lb). Calories, heart rate, cadence, power, and time
+are never converted; rowing's 500 m split stays in metres either way.
+
+Your stored data is never changed — values are converted at read time, so
+switching back restores the exact figures you imported. The choice applies to
+everything you see immediately, and is remembered on this device in the meantime
+so it pre-paints before your profile loads.
 
 ## Heart-rate zones
 
@@ -103,9 +117,12 @@ boundaries are percent of that max HR:
 
 ## Profile
 
-The **Profile** page has four parts:
+The **Profile** page has five parts:
 
 - **Account** — your name, email, and join date.
+- **Units of measurement** — choose metric or imperial for all displayed
+  distances, elevations and paces (see *Units of measurement*). The change is
+  saved as soon as you pick it.
 - **Connected accounts** — connect or disconnect a third-party service (e.g.
   Strava) and sync your activities from it.
 - **Heart-rate zones** — set your max and resting heart rate (bpm), an optional

@@ -18,6 +18,7 @@ import type {
   SportsView,
   SyncResultView,
   TrackpointsView,
+  Units,
   UserView,
 } from "./types";
 
@@ -68,9 +69,10 @@ export function useSports() {
   });
 }
 
-export function useProfile() {
+export function useProfile(enabled = true) {
   return useQuery({
     queryKey: ["profile"],
+    enabled,
     queryFn: () => apiRequest<ProfileView>("/api/v1/users/me/profile"),
   });
 }
@@ -137,13 +139,15 @@ export function useDeleteActivity() {
 }
 
 export type ProfileUpdateInput = {
-  max_heart_rate: number | null;
-  resting_heart_rate: number | null;
-  date_of_birth: string | null; // "YYYY-MM-DD" or null to clear
-  custom_zone_1_top_bpm: number | null; // all four or none (server-enforced)
-  custom_zone_2_top_bpm: number | null;
-  custom_zone_3_top_bpm: number | null;
-  custom_zone_4_top_bpm: number | null;
+  // Omitted fields keep their current value; `null` clears (server-side rule).
+  max_heart_rate?: number | null;
+  resting_heart_rate?: number | null;
+  date_of_birth?: string | null; // "YYYY-MM-DD" or null to clear
+  custom_zone_1_top_bpm?: number | null; // all four or none (server-enforced)
+  custom_zone_2_top_bpm?: number | null;
+  custom_zone_3_top_bpm?: number | null;
+  custom_zone_4_top_bpm?: number | null;
+  units_system?: Units; // "metric" or "imperial"; omitted keeps current
 };
 
 export function useUpdateProfile() {

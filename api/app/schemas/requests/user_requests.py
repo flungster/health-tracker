@@ -1,6 +1,7 @@
 """Request schemas for user accounts and authentication."""
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -43,6 +44,12 @@ class ProfileUpdateRequest(BaseModel):
     thresholds are in bpm. Custom zones must be sent as a complete, strictly-
     ascending set of four (or all cleared); validation is enforced in the
     service so clients get the app error envelope.
+
+    ``units_system`` selects the display unit system ("metric" or "imperial").
+    There is no third state — metric *is* the cleared/default one — so both an
+    explicit ``"metric"`` and an explicit ``null`` reset to metric, while an
+    omitted field keeps the current system. Display-only: stored activity data
+    is always metric and converted at read time (M14b).
     """
 
     max_heart_rate: int | None = Field(default=None, ge=30, le=300)
@@ -52,3 +59,4 @@ class ProfileUpdateRequest(BaseModel):
     custom_zone_2_top_bpm: int | None = Field(default=None, ge=30, le=300)
     custom_zone_3_top_bpm: int | None = Field(default=None, ge=30, le=300)
     custom_zone_4_top_bpm: int | None = Field(default=None, ge=30, le=300)
+    units_system: Literal["metric", "imperial"] | None = Field(default=None)

@@ -174,7 +174,8 @@ currently in effect (computed from them).
   "custom_zone_4_top_bpm": null,
   "zone_source": "age",
   "effective_max_heart_rate": 178,
-  "age": 42
+  "age": 42,
+  "units_system": "metric"
 }
 ```
 
@@ -190,6 +191,12 @@ computed fields name it: `zone_source` is `"custom"`, `"max_heart_rate"` or
 HR used (`null` for custom zones), and `age` when the source is age. This
 reference is what each activity's `heart_rate_zones` (in the detail endpoint)
 is computed against.
+
+`units_system` is derived, never stored: `"imperial"` when the user has
+enabled imperial display units (since a UTC instant recorded in
+`user_profiles.imperial_units_enabled_at`), `"metric"` otherwise (the default).
+Display-only — activity values are always stored in SI units and converted to
+this system at read time (M14b).
 
 ### `PATCH /users/me/profile`
 
@@ -208,7 +215,35 @@ a future date of birth, one implying an age outside 1–120, or a partial /
 non-ascending custom set is rejected with `422 VALIDATION_ERROR`. Response
 `200`: the updated profile (same shape as `GET`).
 
+`units_system` selects the display unit system: `"metric"` or `"imperial"`.
+There is no third state — metric *is* the default/cleared one — so both an
+explicit `"metric"` and an explicit `null` reset to metric, while an omitted
+field keeps the current system. Any other value is rejected with `422
+VALIDATION_ERROR`. Enabling imperial records the instant (UTC) in
+`imperial_units_enabled_at`, so the setting answers "is it on?" and "since
+when?"; activity values are converted to imperial at read time (M14b).
+
 ## Activities
+
+**Unit systems.** Every activity response carries a `units` field naming the
+caller's display system — `"metric"` or `"imperial"`, from `units_system` on
+their profile (`PATCH /users/me/profile`). Unit-bearing fields carry neutral
+names and are expressed in that system, converted by the API at read time:
+
+| Field | metric (`units = "metric"`) | imperial (`units = "imperial"`) |
+|---|---|---|
+| `distance` (list + detail) | meters | miles (`/ 1609.344`, exact) |
+| `elevation_gain` (list + detail), trackpoint `altitude` | meters | feet (`/ 0.3048`, exact) |
+| running `avg/min/max_pace_seconds` (detail) | s per km | s per mile (`× 1.609344`, exact) |
+| strength `total_weight` (detail) | kg | lb (`/ 0.45359237`, exact) |
+| trackpoint `speed` | m/s | mph (`× 3600 / 1609.344`) |
+
+Universal values keep their unit in the name and are never converted:
+`calories_kcal`, `power_w`, all bpm/rpm/spm values, durations. Rowing's
+`split_500m_seconds` stays 500-m-based in both systems (the standard rowing
+pace metric). Storage is always SI — values are converted at read time only, so
+toggling the setting never rewrites anything and is exact (the API sends
+unrounded numbers; display rounding is a client concern).
 
 ### `POST /activities`
 
@@ -249,7 +284,8 @@ Query parameters:
 | `limit` | `25` | 1–100 |
 | `offset` | `0` | ≥ 0 |
 
-Response `200`:
+Response `200` (the example shows a metric caller; an imperial caller gets the
+same shape with `units: "imperial"` and converted values — see above):
 
 ```json
 {
@@ -261,21 +297,22 @@ Response `200`:
       "started_at": "2026-08-24T07:15:00Z",
       "duration_seconds": 2850,
       "moving_seconds": 2800,
-      "distance_m": 5054.3,
+      "distance": 5054.3,
       "calories_kcal": 410.5,
-      "elevation_gain_m": 88.0,
+      "elevation_gain": 88.0,
       "heart_rate_avg_bpm": 152
     }
   ],
   "total": 42,
   "limit": 25,
-  "offset": 0
+  "offset": 0,
+  "units": "metric"
 }
 ```
 
 ### `GET /activities/{id}`
 
-Full detail for one of the caller's activities.
+Full detail for one of the caller's activities, in their display unit system.
 
 ```json
 {
@@ -287,9 +324,9 @@ Full detail for one of the caller's activities.
   "ended_at": "2026-08-24T08:02:30Z",
   "duration_seconds": 2850,
   "moving_seconds": 2800,
-  "distance_m": 5054.3,
+  "distance": 5054.3,
   "calories_kcal": 410.5,
-  "elevation_gain_m": 88.0,
+  "elevation_gain": 88.0,
   "heart_rate_min_bpm": 96,
   "heart_rate_avg_bpm": 152,
   "heart_rate_max_bpm": 178,
@@ -297,6 +334,7 @@ Full detail for one of the caller's activities.
   "source_format": "gpx",
   "original_filename": "run.gpx",
   "created_at": "2026-08-24T08:05:00Z",
+  "units": "metric",
   "splits": [
     {
       "split_type": "km",
@@ -315,9 +353,9 @@ Full detail for one of the caller's activities.
     "zone_5_seconds": 150
   },
   "running": {
-    "avg_pace_s_per_km": 292.8,
-    "min_pace_s_per_km": 280.0,
-    "max_pace_s_per_km": 300.0
+    "avg_pace_seconds": 292.8,
+    "min_pace_seconds": 280.0,
+    "max_pace_seconds": 300.0
   },
   "cycling": null,
   "rowing": null,
@@ -326,7 +364,15 @@ Full detail for one of the caller's activities.
 ```
 
 Notes:
-- `splits` contains both `km` and `mi` rows, precomputed at import.
+- Unit-bearing values follow `units` (see the section above): this example is a
+  metric caller, so `distance`/`elevation_gain` are meters and the running paces
+  are seconds per km. An imperial caller gets miles, feet, and s-per-mile for the
+  same stored activity — nothing is re-imported or rewritten.
+- `splits` contains only the rows of the caller's system — `km` for metric,
+  `mi` for imperial (both are precomputed at import). An activity whose tracked
+  distance is under a tenth of one unit has no splits for that system (e.g. a
+  ~130 m activity shows km rows in metric but none in imperial). `pace_seconds`
+  is per that system's unit.
 - `heart_rate_zones` is computed **at view time** from the stored trackpoints,
   against the **caller's zone reference** (custom boundaries > manual max heart
   rate > age-derived — see `GET /users/me/profile`). For a custom reference the
@@ -342,7 +388,8 @@ Notes:
 
 ### `GET /activities/{id}/trackpoints`
 
-All recorded samples, in order.
+All recorded samples, in order. `altitude` and `speed` follow the top-level
+`units` (m and m/s for metric, ft and mph otherwise); positions never change.
 
 ```json
 {
@@ -352,13 +399,14 @@ All recorded samples, in order.
       "recorded_at": "2026-08-24T07:15:00Z",
       "lat": 47.36,
       "lon": 8.54,
-      "altitude_m": 520.0,
+      "altitude": 520.0,
       "heart_rate_bpm": 120,
       "cadence_rpm": 170,
-      "speed_mps": 3.4,
+      "speed": 3.4,
       "power_w": null
     }
-  ]
+  ],
+  "units": "metric"
 }
 ```
 
@@ -367,7 +415,8 @@ non-GPS samples, `power_w` for non-cycling).
 
 ### `GET /activities/{id}/splits`
 
-The precomputed splits only.
+The precomputed splits of the caller's system only (`km` rows for metric,
+`mi` rows otherwise — same rule as the detail's embedded `splits`).
 
 ```json
 {

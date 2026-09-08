@@ -1,13 +1,47 @@
 /** Display formatting helpers (distances, durations, paces, dates). */
 
-export function formatDistance(meters: number | null): string {
-  if (meters === null) {
+import type { Units } from "./api/types";
+
+/** Distance in the display system: m/km for metric, miles (1 decimal) otherwise. */
+export function formatDistance(value: number | null, units: Units = "metric"): string {
+  if (value === null) {
     return "—";
   }
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
+  if (units === "imperial") {
+    return `${value.toFixed(1)} mi`;
   }
-  return `${(meters / 1000).toFixed(2)} km`;
+  if (value < 1000) {
+    return `${Math.round(value)} m`;
+  }
+  return `${(value / 1000).toFixed(2)} km`;
+}
+
+/** Elevation in the display system: meters for metric, whole feet otherwise. */
+export function formatElevation(value: number | null, units: Units = "metric"): string {
+  if (value === null) {
+    return "—";
+  }
+  if (units === "imperial") {
+    return `${Math.round(value).toLocaleString()} ft`;
+  }
+  // Metric elevation has always read like a distance ("88 m", "1.23 km").
+  return formatDistance(value);
+}
+
+/** Weight in the display system: kg for metric, whole lb otherwise. */
+export function formatWeight(value: number | null, units: Units = "metric"): string {
+  if (value === null) {
+    return "—";
+  }
+  if (units === "imperial") {
+    return `${Math.round(value).toLocaleString()} lb`;
+  }
+  return `${Math.round(value)} kg`;
+}
+
+/** Pace suffix for the display system ("/km" or "/mi"). */
+export function paceSuffix(units: Units = "metric"): string {
+  return units === "imperial" ? "/mi" : "/km";
 }
 
 export function formatDuration(totalSeconds: number | null | undefined): string {

@@ -64,13 +64,18 @@ def list_activities(
     activity_service: ActivityService = Depends(get_activity_service),
     current_user: User = Depends(get_current_user),
 ) -> ActivitiesListView:
-    """The user's activities, newest first, with pagination."""
-    activities, total = activity_service.list_for_user(current_user.uuid, limit, offset)
+    """The user's activities, newest first, with pagination.
+
+    Unit-bearing values are expressed in the caller's display unit system
+    (named by ``units``); metric callers see the stored SI values.
+    """
+    activities, total, units = activity_service.list_for_user(current_user.uuid, limit, offset)
     return ActivitiesListView(
-        items=[ActivityMapper.to_summary_view(activity) for activity in activities],
+        items=[ActivityMapper.to_summary_view(activity, units) for activity in activities],
         total=total,
         limit=limit,
         offset=offset,
+        units=units.value,
     )
 
 
@@ -91,9 +96,16 @@ def list_trackpoints(
     activity_service: ActivityService = Depends(get_activity_service),
     current_user: User = Depends(get_current_user),
 ) -> TrackpointsView:
-    """All recorded samples of one of the user's activities."""
-    points = activity_service.get_trackpoints(current_user.uuid, activity_id)
-    return TrackpointsView(items=[ActivityMapper.to_trackpoint_view(point) for point in points])
+    """All recorded samples of one of the user's activities.
+
+    ``altitude`` / ``speed`` are expressed in the caller's display unit system
+    (named by ``units``); positions never change.
+    """
+    points, units = activity_service.get_trackpoints(current_user.uuid, activity_id)
+    return TrackpointsView(
+        items=[ActivityMapper.to_trackpoint_view(point, units) for point in points],
+        units=units.value,
+    )
 
 
 @router.get("/activities/{activity_id}/splits", response_model=SplitsView)

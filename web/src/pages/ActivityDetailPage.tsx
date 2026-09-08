@@ -23,13 +23,18 @@ import {
   formatClock,
   formatDistance,
   formatDuration,
+  formatElevation,
   formatPace,
+  paceSuffix,
 } from "../format";
+import { useUnits } from "../units/context";
 
 export default function ActivityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const activityId = id ?? "";
+
+  const { units } = useUnits();
 
   const { data: activity, isPending, isError, error } = useActivity(activityId);
   const { data: trackpointsData } = useTrackpoints(activityId);
@@ -78,9 +83,9 @@ export default function ActivityDetailPage() {
     }
   }
 
-  const avgPace = activity.running?.avg_pace_s_per_km ?? null;
+  const avgPace = activity.running?.avg_pace_seconds ?? null;
   const stats = [
-    { label: "Distance", value: formatDistance(activity.distance_m) },
+    { label: "Distance", value: formatDistance(activity.distance, units) },
     { label: "Time", value: formatDuration(activity.duration_seconds) },
     {
       label: "Moving time",
@@ -88,7 +93,7 @@ export default function ActivityDetailPage() {
     },
     {
       label: "Elev gain",
-      value: formatDistance(activity.elevation_gain_m),
+      value: formatElevation(activity.elevation_gain, units),
     },
     {
       label: "Calories",
@@ -96,7 +101,7 @@ export default function ActivityDetailPage() {
     },
     {
       label: "Avg pace",
-      value: avgPace !== null ? `${formatPace(avgPace)}/km` : "—",
+      value: avgPace !== null ? `${formatPace(avgPace)}${paceSuffix(units)}` : "—",
     },
     {
       label: "Avg HR",

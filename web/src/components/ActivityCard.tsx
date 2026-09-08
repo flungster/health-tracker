@@ -4,10 +4,12 @@ import { Link } from "react-router-dom";
 
 import type { ActivitySummaryView } from "../api/types";
 import { formatActivityDate, formatClock, formatDistance, formatDuration } from "../format";
+import { useUnits } from "../units/context";
 import SportBadge from "./SportBadge";
 import { Card } from "./Ui";
 
 export default function ActivityCard({ activity }: { activity: ActivitySummaryView }) {
+  const { units } = useUnits();
   return (
     <Card className="px-5 py-4 transition-shadow hover:shadow-sm">
       <Link to={`/activities/${activity.id}`} className="block">
@@ -21,9 +23,7 @@ export default function ActivityCard({ activity }: { activity: ActivitySummaryVi
           </span>
         </div>
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-muted">
-          <span>
-            {formatDistance(activity.distance_m)}
-          </span>
+          <span>{formatDistance(activity.distance, units)}</span>
           <span>{formatDuration(activity.duration_seconds)}</span>
           {activity.heart_rate_avg_bpm !== null && (
             <span>{activity.heart_rate_avg_bpm} bpm avg</span>

@@ -105,6 +105,7 @@ strictly-ascending set of four custom zone boundaries > a manually entered
 | `resting_heart_rate` | `int` NULL | 30–300 bpm. |
 | `date_of_birth` | `date` NULL | Implied age must be 1–120. Feeds the age-derived max heart rate (`220 - current_age`). |
 | `custom_zone_1_top_bpm` … `custom_zone_4_top_bpm` | `int` NULL × 4 | bpm, each > 0 and ≤ 300. User-defined tops of zones 1–4 (zone 5 is above zone 4's top). Valid only as a complete strictly-ascending set of four; all NULL when custom zones are not in use. |
+| `imperial_units_enabled_at` | `timestamptz` NULL | When the user enabled **imperial display units** (M14). A timestamp, not a boolean: NULL = metric (the default), set = imperial in effect since that instant — so the column answers both "is it on?" and "since when?". Toggling back to metric clears the column (a two-state setting; the last enable instant is dropped). **Display-only**: activity data stays stored in SI units (see `activities`); conversion to the user's display system happens at the API view layer. |
 | audit | | |
 
 ### `activities`
@@ -391,6 +392,7 @@ time of writing.)
 | `20260827000001_provider_credentials.sql` | Self-serve provider configuration: `server_settings` (deployment-level key/value; first tenant the Fernet key `secret_key`) + `provider_credentials` (the deployment's OAuth client per provider: client id, client secret encrypted at rest, optional label). `provider_accounts` gains `sync_since` (user-chosen inclusive lower bound of the sync walk; NULL = full history). |
 | `20260829000001_drop_activity_hr_zones.sql` | Drops the `activity_hr_zones` table: heart-rate zones are computed at view time from the trackpoints, relative to the viewer's profile max heart rate, instead of being frozen at import. |
 | `20260830000001_zone_config_and_snapshots.sql` | User-configurable heart-rate zones: `user_profiles` gains `date_of_birth` + four optional custom zone tops; new `zone_sources` reference table (seeded `custom` / `max_heart_rate` / `age`) + versioned `activity_zone_snapshots` (one computation per row, at most one live row per activity; superseded rows soft-deleted for history). |
+| `20260905000001_imperial_units_setting.sql` | Per-user unit-system setting (M14a): `user_profiles` gains nullable `imperial_units_enabled_at timestamptz` (NULL = metric default; set = imperial since that instant). No activity rows touched — storage stays SI, conversion is view-layer (M14b). |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

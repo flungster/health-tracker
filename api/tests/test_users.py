@@ -1,8 +1,12 @@
 """Tests for the /users/me endpoints (account and profile updates)."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 # The ``register_user`` fixture (a factory) is defined in tests/conftest.py.
 # It is typed Any here to keep this file independent of the fixture module.
@@ -132,6 +136,8 @@ EMPTY_PROFILE: dict[str, Any] = {
     "zone_source": None,
     "effective_max_heart_rate": None,
     "age": None,
+    # Derived display-unit system; metric is the default for a fresh user.
+    "units_system": "metric",
 }
 
 
@@ -350,3 +356,104 @@ def test_profile_custom_zones_round_trip(client: TestClient, register_user: Any)
     assert view["zone_source"] == "custom"
     read_back = {view[f"custom_zone_{i}_top_bpm"] for i in range(1, 5)}
     assert read_back == custom
+
+
+def test_profile_units_imperial_round_trip(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    enabled = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=headers
+    )
+    assert enabled.status_code == 200, enabled.text
+    # Everything else is untouched; only the derived system changed.
+    assert enabled.json() == _view(units_system="imperial")
+
+    read = client.get("/api/v1/users/me/profile", headers=headers)
+    assert read.json() == _view(units_system="imperial")
+
+
+def test_profile_units_metric_resets_imperial(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    client.patch("/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=headers)
+    view = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "metric"}, headers=headers
+    ).json()
+    assert view["units_system"] == "metric"
+
+
+def test_profile_units_null_resets_imperial(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    client.patch("/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=headers)
+    # An explicit null is the same two-state operation as sending "metric".
+    view = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": None}, headers=headers
+    ).json()
+    assert view["units_system"] == "metric"
+
+
+def test_profile_units_omitted_kept(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    client.patch("/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=headers)
+    # Updating an unrelated field leaves the unit system untouched.
+    view = client.patch(
+        "/api/v1/users/me/profile", json={"max_heart_rate": 185}, headers=headers
+    ).json()
+    assert view["units_system"] == "imperial"
+
+
+def test_profile_rejects_unknown_units_system(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        json={"units_system": "yardstick"},
+        headers=_auth_headers(body["token"]),
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_profile_units_stamps_and_clears_column(
+    client: TestClient, register_user: Any, engine: Engine
+) -> None:
+    """The stored column answers both questions the setting exists for.
+
+    Enabling imperial records *when* it was enabled (a fresh UTC instant);
+    switching back to metric clears the column. Read straight from the
+    database, because the view deliberately exposes only the derived system.
+    """
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+    user_id = UUID(str(body["user"]["id"]))
+
+    def stored_instant() -> datetime | None:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text("SELECT imperial_units_enabled_at FROM user_profiles WHERE user_id = :uid"),
+                {"uid": user_id},
+            ).first()
+        return row[0] if row is not None else None
+
+    assert stored_instant() is None  # no profile row yet -> metric by default
+
+    enabled = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=headers
+    )
+    assert enabled.status_code == 200, enabled.text
+
+    stamp = stored_instant()
+    assert stamp is not None  # imperial in effect...
+    # ...since just now, stamped in UTC (abs() absorbs sub-second skew).
+    assert abs(datetime.now(UTC) - stamp) < timedelta(minutes=1)
+
+    disabled = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "metric"}, headers=headers
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert stored_instant() is None  # cleared back to the default

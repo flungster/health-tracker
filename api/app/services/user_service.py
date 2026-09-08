@@ -1,7 +1,7 @@
 """User account and profile business logic."""
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from app.dao.user_dao import UserDao
@@ -137,6 +137,19 @@ class UserService:
             else (current.custom_zone_4_top_bpm if current is not None else None)
         )
 
+        # Units are stored as "imperial has been in effect since" (a UTC
+        # timestamp), not a boolean. A provided "imperial" stamps now; an
+        # explicit null or "metric" clears back to the default (both are the
+        # same two-state operation); an omitted field keeps what is stored.
+        if "units_system" in provided:
+            imperial_units_enabled_at = (
+                datetime.now(UTC) if request.units_system == "imperial" else None
+            )
+        else:
+            imperial_units_enabled_at = (
+                current.imperial_units_enabled_at if current is not None else None
+            )
+
         self._validate_date_of_birth(date_of_birth, today)
         self._validate_custom_zones(cz1, cz2, cz3, cz4)
 
@@ -149,6 +162,7 @@ class UserService:
             custom_zone_2_top_bpm=cz2,
             custom_zone_3_top_bpm=cz3,
             custom_zone_4_top_bpm=cz4,
+            imperial_units_enabled_at=imperial_units_enabled_at,
         )
         self._unit_of_work.commit()
         logger.info("Updated health settings for %s", user_id)

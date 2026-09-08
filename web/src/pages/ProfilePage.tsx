@@ -4,12 +4,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useProfile, useUpdateProfile, useUpdateUser } from "../api/hooks";
-import type { ProfileView } from "../api/types";
+import type { ProfileView, Units } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import ConnectedAccounts from "../components/ConnectedAccounts";
 import { Card, ErrorNote, Spinner } from "../components/Ui";
 import { inputClass, labelClass } from "../components/AuthShell";
 import { capitalize, formatActivityDate } from "../format";
+import { useUnits } from "../units/context";
 
 function connectFailureReason(reason: string | null): string {
   switch (reason) {
@@ -47,7 +48,26 @@ export default function ProfilePage() {
   const { user } = useAuth();
   const { data: profile, isPending } = useProfile();
   const profileMutation = useUpdateProfile();
+  // Separate instance so the units toggle doesn't share pending/success state
+  // with the heart-rate form below.
+  const unitsMutation = useUpdateProfile();
   const userMutation = useUpdateUser();
+  const { units, setUnits } = useUnits();
+
+  // Server value wins once loaded; context pre-paints before it arrives.
+  const activeUnits: Units = profile?.units_system ?? units;
+
+  function chooseUnits(system: Units) {
+    if (system === activeUnits || unitsMutation.isPending) {
+      return;
+    }
+    // Flip the UI immediately on success (state + localStorage); the profile
+    // invalidation in useUpdateProfile re-syncs everything else.
+    unitsMutation.mutate(
+      { units_system: system },
+      { onSuccess: (saved) => setUnits(saved.units_system) },
+    );
+  }
   const [searchParams, setSearchParams] = useSearchParams();
 
   // One-shot OAuth results (?connected= / ?connect_error=) from the provider
@@ -193,6 +213,33 @@ export default function ProfilePage() {
             </dd>
           </div>
         </dl>
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="text-base font-semibold text-ink">Units of measurement</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          How distances, elevations and paces are displayed across the app. Your stored data is
+          unchanged — values convert at read time, so switching back restores them exactly.
+        </p>
+        <div className="mt-4 flex gap-2">
+          {(["metric", "imperial"] as const).map((system) => (
+            <button
+              key={system}
+              type="button"
+              onClick={() => chooseUnits(system)}
+              disabled={unitsMutation.isPending}
+              className={
+                activeUnits === system
+                  ? "rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white"
+                  : "rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
+              }
+            >
+              {capitalize(system)}
+            </button>
+          ))}
+        </div>
+        {unitsMutation.isPending && <p className="mt-2 text-sm text-accent-dark">Saving…</p>}
+        {unitsMutation.isError && <ErrorNote message={unitsMutation.error.message} />}
       </Card>
 
       <ConnectedAccounts />

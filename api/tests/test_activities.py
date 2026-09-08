@@ -62,8 +62,9 @@ class TestActivityImport:
         assert detail["original_filename"] == "run_sample.gpx"
         assert detail["started_at"] == "2024-06-01T09:00:00Z"
         assert detail["duration_seconds"] == 1480
-        assert detail["distance_m"] is not None
-        assert 4500 < detail["distance_m"] < 5600
+        assert detail["units"] == "metric"  # default display system, values stay SI
+        assert detail["distance"] is not None
+        assert 4500 < detail["distance"] < 5600
         assert detail["heart_rate_max_bpm"] == 160
         assert detail["heart_rate_min_bpm"] == 120
         # Zones need a profile max heart rate to be relative to; with none
@@ -71,8 +72,9 @@ class TestActivityImport:
         assert detail["heart_rate_zones"] is None
         assert len(detail["splits"]) >= 4
         assert detail["running"] is not None
-        assert detail["running"]["avg_pace_s_per_km"] is not None
-        assert 250 < detail["running"]["avg_pace_s_per_km"] < 350
+        # Pace fields are seconds per display distance unit (km when metric).
+        assert detail["running"]["avg_pace_seconds"] is not None
+        assert 250 < detail["running"]["avg_pace_seconds"] < 350
 
         # The original file is stored under uploads/<user_id>/.
         user = body["user"]
@@ -125,7 +127,7 @@ class TestActivityImport:
 
         assert detail["sport_type"] == "running"
         assert detail["source_format"] == "fit"
-        assert detail["distance_m"] == pytest.approx(157.56)
+        assert detail["distance"] == pytest.approx(157.56)  # metric: stored meters
         assert detail["heart_rate_max_bpm"] is not None
 
     def test_sport_and_name_overrides(
@@ -682,3 +684,165 @@ class TestZoneReferenceAndSnapshots:
         self._detail_zones(client, token, second_id)
         rows_second = self._snapshot_rows(engine, second_id)
         assert len(rows_second) == 1
+
+
+class TestUnitsImperial:
+    """M14b: API-side conversion to the caller's display unit system.
+
+    Storage is always SI; these tests prove values are converted at read time
+    per the profile setting, and that toggling back to metric restores exactly
+    the stored values (no rounding or drift ever touches storage). The factors
+    are exact: 1 mi = 1609.344 m, 1 ft = 0.3048 m, and s/mi scales by the
+    exact mile/km ratio.
+    """
+
+    MILE_METERS = 1609.344
+    FOOT_METERS = 0.3048
+
+    def _import(self, client: TestClient, token: str, filename: str) -> dict[str, Any]:
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": (filename, _read(filename), "application/octet-stream")},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def _set_units(self, client: TestClient, token: str, units_system: str) -> None:
+        response = client.patch(
+            "/api/v1/users/me/profile", json={"units_system": units_system}, headers=_auth(token)
+        )
+        assert response.status_code == 200, response.text
+
+    def test_imperial_converts_detail_list_and_trackpoints(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        metric_detail = self._import(client, token, "run_sample.gpx")
+
+        assert metric_detail["units"] == "metric"
+        distance_m = float(metric_detail["distance"])  # stored meters, untouched
+
+        metric_points = client.get(
+            f"/api/v1/activities/{metric_detail['id']}/trackpoints", headers=_auth(token)
+        ).json()
+
+        self._set_units(client, token, "imperial")
+
+        imperial_detail = client.get(
+            f"/api/v1/activities/{metric_detail['id']}", headers=_auth(token)
+        ).json()
+
+        # Distance and elevation convert with the exact factors.
+        assert imperial_detail["units"] == "imperial"
+        assert imperial_detail["distance"] == pytest.approx(distance_m / self.MILE_METERS)
+        if metric_detail["elevation_gain"] is not None:
+            assert imperial_detail["elevation_gain"] == pytest.approx(
+                float(metric_detail["elevation_gain"]) / self.FOOT_METERS
+            )
+
+        # Pace scales by the exact mile/km ratio; kcal stays universal.
+        assert imperial_detail["running"]["avg_pace_seconds"] == pytest.approx(
+            float(metric_detail["running"]["avg_pace_seconds"]) * (self.MILE_METERS / 1000)
+        )
+        assert imperial_detail["calories_kcal"] == metric_detail["calories_kcal"]
+
+        # Splits are filtered to the caller's system: only mi rows now.
+        assert len(imperial_detail["splits"]) >= 1
+        assert all(split["split_type"] == "mi" for split in imperial_detail["splits"])
+
+        # The list feed converts too.
+        imperial_list = client.get("/api/v1/activities", headers=_auth(token)).json()
+        assert imperial_list["units"] == "imperial"
+        run_item = next(
+            item for item in imperial_list["items"] if item["id"] == metric_detail["id"]
+        )
+        assert run_item["distance"] == pytest.approx(distance_m / self.MILE_METERS)
+
+        # Trackpoints: altitude in feet, speed in mph (per-sample, same order).
+        imperial_points = client.get(
+            f"/api/v1/activities/{metric_detail['id']}/trackpoints", headers=_auth(token)
+        ).json()
+        assert imperial_points["units"] == "imperial"
+        compared = 0
+        for metric_point, imperial_point in zip(
+            metric_points["items"], imperial_points["items"], strict=True
+        ):
+            assert metric_point["seq"] == imperial_point["seq"]  # same samples, same order
+            if metric_point["altitude"] is not None:
+                assert imperial_point["altitude"] == pytest.approx(
+                    float(metric_point["altitude"]) / self.FOOT_METERS
+                )
+            if metric_point["speed"] is not None:
+                assert imperial_point["speed"] == pytest.approx(
+                    float(metric_point["speed"]) * 3600 / self.MILE_METERS
+                )
+            compared += 1
+        assert compared == len(metric_points["items"])
+
+    def test_toggling_back_restores_stored_values_exactly(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        metric_detail = self._import(client, token, "run_sample.gpx")
+        distance_m = float(metric_detail["distance"])
+
+        self._set_units(client, token, "imperial")
+        imperial_detail = client.get(
+            f"/api/v1/activities/{metric_detail['id']}", headers=_auth(token)
+        ).json()
+        imperial_distance = float(imperial_detail["distance"])
+
+        self._set_units(client, token, "metric")
+        restored = client.get(
+            f"/api/v1/activities/{metric_detail['id']}", headers=_auth(token)
+        ).json()
+
+        assert restored["units"] == "metric"
+        # Exact equality: the stored SI value was never rounded or rewritten.
+        assert restored["distance"] == distance_m
+        # And the imperial value was a pure function of it.
+        assert restored["distance"] == pytest.approx(imperial_distance * self.MILE_METERS)
+
+    def test_short_activity_has_no_splits_in_imperial(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        # An activity whose trackpoint path is ~132 m — enough for a km split
+        # (the last tenth of one), but less than a tenth of a mile (160.94 m) —
+        # so imperial mode has no splits at all (the documented 0.1-of-a-unit
+        # rule) while metric mode has km rows. Note the FIT fixture can't demo
+        # this: its trackpoint path is longer than its 157.6 m summary distance.
+        token = str(register_user()["token"])
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": ("short_leg.gpx", _SHORT_GPX, "application/octet-stream")},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        activity_id = str(response.json()["id"])
+
+        metric_splits = client.get(
+            f"/api/v1/activities/{activity_id}/splits", headers=_auth(token)
+        ).json()["items"]
+        assert len(metric_splits) >= 1
+        assert all(split["split_type"] == "km" for split in metric_splits)
+
+        self._set_units(client, token, "imperial")
+        imperial_detail = client.get(
+            f"/api/v1/activities/{activity_id}", headers=_auth(token)
+        ).json()
+        assert imperial_detail["units"] == "imperial"
+        assert imperial_detail["splits"] == []  # shorter than a tenth of a mile
+
+
+# A GPX with a ~132 m trackpoint path (two close samples).
+_SHORT_GPX = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="health-tracker-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Short Leg</name>
+    <trkseg>
+      <trkpt lat="48.850" lon="2.350"><ele>40</ele><time>2024-06-01T09:00:00Z</time></trkpt>
+      <trkpt lat="48.851" lon="2.351"><ele>42</ele><time>2024-06-01T09:05:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""

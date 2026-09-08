@@ -26,8 +26,15 @@ export type ProfileView = {
   zone_source: "custom" | "max_heart_rate" | "age" | null;
   effective_max_heart_rate: number | null; // for max_heart_rate / age references
   age: number | null; // when zone_source is "age"
+
+  /** Derived display unit system (never null). */
+  units_system: "metric" | "imperial";
 };
 
+/** The display unit system a response's unit-bearing values are expressed in. */
+export type Units = "metric" | "imperial";
+
+/** Unit-bearing activity values are in the caller's display system (see `units`). */
 export type ActivitySummaryView = {
   id: string;
   sport_type: string;
@@ -35,9 +42,9 @@ export type ActivitySummaryView = {
   started_at: string;
   duration_seconds: number;
   moving_seconds: number | null;
-  distance_m: number | null;
+  distance: number | null; // meters when units is "metric", miles otherwise
   calories_kcal: number | null;
-  elevation_gain_m: number | null;
+  elevation_gain: number | null; // meters when "metric", feet otherwise
   heart_rate_avg_bpm: number | null;
 };
 
@@ -46,6 +53,7 @@ export type ActivitiesListView = {
   total: number;
   limit: number;
   offset: number;
+  units: Units; // display system of all unit-bearing values in this response
 };
 
 export type SplitView = {
@@ -70,9 +78,10 @@ export type HrZoneView = {
 };
 
 export type RunningMetricsView = {
-  avg_pace_s_per_km: number | null;
-  min_pace_s_per_km: number | null;
-  max_pace_s_per_km: number | null;
+  /** Pace in seconds per display distance unit (km when metric, mi otherwise). */
+  avg_pace_seconds: number | null;
+  min_pace_seconds: number | null;
+  max_pace_seconds: number | null;
 };
 
 export type CyclingMetricsView = {
@@ -90,7 +99,8 @@ export type RowingMetricsView = {
 export type StrengthMetricsView = {
   total_sets: number;
   total_exercises: number;
-  total_weight_kg: number | null;
+  /** kg when units is "metric", lb otherwise. */
+  total_weight: number | null;
 };
 
 export type ActivityDetailView = {
@@ -102,9 +112,9 @@ export type ActivityDetailView = {
   ended_at: string;
   duration_seconds: number;
   moving_seconds: number | null;
-  distance_m: number | null;
+  distance: number | null; // meters when units is "metric", miles otherwise
   calories_kcal: number | null;
-  elevation_gain_m: number | null;
+  elevation_gain: number | null; // meters when "metric", feet otherwise
   heart_rate_min_bpm: number | null;
   heart_rate_avg_bpm: number | null;
   heart_rate_max_bpm: number | null;
@@ -112,6 +122,8 @@ export type ActivityDetailView = {
   source_format: string | null;
   original_filename: string | null;
   created_at: string;
+  units: Units; // display system of all unit-bearing values in this response
+  /** Splits already filtered to `units` (km rows for metric, mi rows otherwise). */
   splits: SplitView[];
   heart_rate_zones: HrZoneView | null;
   running: RunningMetricsView | null;
@@ -125,15 +137,16 @@ export type TrackpointView = {
   recorded_at: string | null;
   lat: number | null;
   lon: number | null;
-  altitude_m: number | null;
+  altitude: number | null; // meters when units is "metric", feet otherwise
   heart_rate_bpm: number | null;
   cadence_rpm: number | null;
-  speed_mps: number | null;
+  speed: number | null; // m/s when "metric", mph otherwise
   power_w: number | null;
 };
 
 export type TrackpointsView = {
   items: TrackpointView[];
+  units: Units; // display system of altitude/speed in this response
 };
 
 export type SportTypeView = {

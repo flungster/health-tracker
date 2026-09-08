@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { UnitsProvider } from "./units/context";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -24,12 +25,14 @@ if (container === null) {
 
 createRoot(container).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
-  </StrictMode>,
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <UnitsProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </UnitsProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </StrictMode>,
 );

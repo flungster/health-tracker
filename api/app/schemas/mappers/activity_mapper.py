@@ -11,6 +11,15 @@ from app.models.cycling_activity import CyclingActivity
 from app.models.rowing_activity import RowingActivity
 from app.models.running_activity import RunningActivity
 from app.models.strength_activity import StrengthActivity
+from app.schemas.units import (
+    UnitSystem,
+    display_altitude,
+    display_distance,
+    display_elevation_gain,
+    display_pace_seconds,
+    display_speed,
+    display_weight,
+)
 from app.schemas.views.activity_views import (
     ActivityDetailView,
     ActivitySummaryView,
@@ -163,8 +172,12 @@ class ActivityMapper:
         return StrengthActivity(activity_id=activity_id, total_sets=0, total_exercises=0)
 
     @staticmethod
-    def to_summary_view(activity: Activity) -> ActivitySummaryView:
-        """Map an ORM activity to its list-feed view."""
+    def to_summary_view(activity: Activity, units: UnitSystem) -> ActivitySummaryView:
+        """Map an ORM activity to its list-feed view.
+
+        Distance and elevation are converted into the caller's display unit
+        system (``units``); calories stay kcal.
+        """
         return ActivitySummaryView(
             id=activity.uuid,
             sport_type=activity.sport_type,
@@ -172,9 +185,9 @@ class ActivityMapper:
             started_at=activity.started_at,
             duration_seconds=activity.duration_seconds,
             moving_seconds=activity.moving_seconds,
-            distance_m=activity.distance_m,
+            distance=display_distance(activity.distance_m, units),
             calories_kcal=activity.calories_kcal,
-            elevation_gain_m=activity.elevation_gain_m,
+            elevation_gain=display_elevation_gain(activity.elevation_gain_m, units),
             heart_rate_avg_bpm=activity.heart_rate_avg_bpm,
         )
 
@@ -191,17 +204,17 @@ class ActivityMapper:
         )
 
     @staticmethod
-    def to_trackpoint_view(point: ActivityTrackpoint) -> TrackpointView:
-        """Map an ORM trackpoint to its view."""
+    def to_trackpoint_view(point: ActivityTrackpoint, units: UnitSystem) -> TrackpointView:
+        """Map an ORM trackpoint to its view (altitude/speed in the caller's units)."""
         return TrackpointView(
             seq=point.seq,
             recorded_at=point.recorded_at,
             lat=point.lat,
             lon=point.lon,
-            altitude_m=point.altitude_m,
+            altitude=display_altitude(point.altitude_m, units),
             heart_rate_bpm=point.heart_rate_bpm,
             cadence_rpm=point.cadence_rpm,
-            speed_mps=point.speed_mps,
+            speed=display_speed(point.speed_mps, units),
             power_w=point.power_w,
         )
 
@@ -214,8 +227,13 @@ class ActivityMapper:
         cycling: CyclingActivity | None,
         rowing: RowingActivity | None,
         strength: StrengthActivity | None,
+        units: UnitSystem,
     ) -> ActivityDetailView:
-        """Map an activity and its derived rows to the detail view."""
+        """Map an activity and its derived rows to the detail view.
+
+        ``splits`` is already filtered by the caller's unit system (the service
+        does that); distance, elevation, paces and weight are converted into it.
+        """
         return ActivityDetailView(
             id=activity.uuid,
             sport_type=activity.sport_type,
@@ -225,9 +243,9 @@ class ActivityMapper:
             ended_at=activity.ended_at,
             duration_seconds=activity.duration_seconds,
             moving_seconds=activity.moving_seconds,
-            distance_m=activity.distance_m,
+            distance=display_distance(activity.distance_m, units),
             calories_kcal=activity.calories_kcal,
-            elevation_gain_m=activity.elevation_gain_m,
+            elevation_gain=display_elevation_gain(activity.elevation_gain_m, units),
             heart_rate_min_bpm=activity.heart_rate_min_bpm,
             heart_rate_avg_bpm=activity.heart_rate_avg_bpm,
             heart_rate_max_bpm=activity.heart_rate_max_bpm,
@@ -235,6 +253,7 @@ class ActivityMapper:
             source_format=activity.source_format,
             original_filename=activity.original_filename,
             created_at=activity.created_at,
+            units=units.value,
             splits=[ActivityMapper.to_split_view(split) for split in splits],
             heart_rate_zones=(
                 HrZoneView(
@@ -249,9 +268,9 @@ class ActivityMapper:
             ),
             running=(
                 RunningMetricsView(
-                    avg_pace_s_per_km=running.avg_pace_s_per_km,
-                    min_pace_s_per_km=running.min_pace_s_per_km,
-                    max_pace_s_per_km=running.max_pace_s_per_km,
+                    avg_pace_seconds=display_pace_seconds(running.avg_pace_s_per_km, units),
+                    min_pace_seconds=display_pace_seconds(running.min_pace_s_per_km, units),
+                    max_pace_seconds=display_pace_seconds(running.max_pace_s_per_km, units),
                 )
                 if running is not None
                 else None
@@ -278,7 +297,7 @@ class ActivityMapper:
                 StrengthMetricsView(
                     total_sets=strength.total_sets,
                     total_exercises=strength.total_exercises,
-                    total_weight_kg=strength.total_weight_kg,
+                    total_weight=display_weight(strength.total_weight_kg, units),
                 )
                 if strength is not None
                 else None
