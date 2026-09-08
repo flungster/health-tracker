@@ -42,8 +42,9 @@ logs: ## Tail logs for all services
 	$(COMPOSE) logs -f
 
 .PHONY: test
-test: ## Run API tests (requires `make up` for the database)
+test: ## Run API tests (requires `make up` for the database) + web unit tests
 	cd api && uv run pytest
+	cd web && npm test
 
 .PHONY: lint
 lint: ## Lint and type-check API (ruff, mypy) and web (eslint, tsc)

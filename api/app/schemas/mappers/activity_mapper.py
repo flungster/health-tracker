@@ -30,6 +30,7 @@ from app.schemas.views.activity_views import (
     SplitView,
     StrengthMetricsView,
     TrackpointView,
+    WalkingMetricsView,
 )
 from app.services.activity_stats import HrZoneStats, SplitStats
 
@@ -219,6 +220,18 @@ class ActivityMapper:
         )
 
     @staticmethod
+    def _walking_avg_pace_s_per_km(activity: Activity) -> float | None:
+        """Average walking pace in s/km from the stored moving time and distance.
+
+        None when either is missing or zero — a walk without GPS (or with no
+        moving time) simply has no pace, mirroring how running paces stay null.
+        """
+        if activity.moving_seconds is None or not activity.distance_m:
+            return None
+        seconds_per_km = activity.moving_seconds / (activity.distance_m / 1000.0)
+        return round(seconds_per_km, 1)
+
+    @staticmethod
     def to_detail_view(
         activity: Activity,
         splits: list[ActivitySplit],
@@ -233,7 +246,15 @@ class ActivityMapper:
 
         ``splits`` is already filtered by the caller's unit system (the service
         does that); distance, elevation, paces and weight are converted into it.
+
+        Walking has no metric row: its pace is derived at view time from the
+        stored moving time and distance (see ``_walking_avg_pace_s_per_km``).
         """
+        walking_pace = (
+            ActivityMapper._walking_avg_pace_s_per_km(activity)
+            if activity.sport_type == "walking"
+            else None
+        )
         return ActivityDetailView(
             id=activity.uuid,
             sport_type=activity.sport_type,
@@ -273,6 +294,12 @@ class ActivityMapper:
                     max_pace_seconds=display_pace_seconds(running.max_pace_s_per_km, units),
                 )
                 if running is not None
+                else None
+            ),
+            # Emitted for every walk, even one without distance (pace then null).
+            walking=(
+                WalkingMetricsView(avg_pace_seconds=display_pace_seconds(walking_pace, units))
+                if activity.sport_type == "walking"
                 else None
             ),
             cycling=(

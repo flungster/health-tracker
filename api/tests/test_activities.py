@@ -72,6 +72,8 @@ class TestActivityImport:
         assert detail["heart_rate_zones"] is None
         assert len(detail["splits"]) >= 4
         assert detail["running"] is not None
+        # Exactly one sport object per activity: a run has no walking metrics.
+        assert detail["walking"] is None
         # Pace fields are seconds per display distance unit (km when metric).
         assert detail["running"]["avg_pace_seconds"] is not None
         assert 250 < detail["running"]["avg_pace_seconds"] < 350
@@ -171,6 +173,27 @@ class TestActivityImport:
         assert detail["rowing"]["stroke_rate_max_spm"] == 172
         # ~5 km in ~25 min: the standard rowing pace is present too.
         assert detail["rowing"]["split_500m_seconds"] is not None
+
+    def test_imports_walking_with_derived_pace(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        # run_sample.gpx carries 1480 s of moving time over ~5.05 km; imported
+        # as a walk, the pace is derived at view time: 292.8 s/km (metric).
+        token = str(register_user()["token"])
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": ("run_sample.gpx", _read("run_sample.gpx"), "application/octet-stream")},
+            data={"sport_type": "walking", "name": "Lunch Walk"},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        detail = response.json()
+
+        assert detail["sport_type"] == "walking"
+        # Exactly one sport object per activity: walking populated, running null.
+        assert detail["walking"] is not None
+        assert detail["running"] is None
+        assert detail["walking"]["avg_pace_seconds"] == 292.8
 
     def test_rejects_unknown_format(
         self, client: TestClient, register_user: Any, uploads_dir: Path
@@ -830,6 +853,34 @@ class TestUnitsImperial:
         assert restored["distance"] == distance_m
         # And the imperial value was a pure function of it.
         assert restored["distance"] == pytest.approx(imperial_distance * self.MILE_METERS)
+
+    def test_imperial_converts_derived_walking_pace(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        # The walking pace is not stored — it is derived at view time from the
+        # stored moving time and distance, then converted like any other value.
+        token = str(register_user()["token"])
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": ("run_sample.gpx", _read("run_sample.gpx"), "application/octet-stream")},
+            data={"sport_type": "walking"},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        activity_id = str(response.json()["id"])
+
+        metric_detail = client.get(f"/api/v1/activities/{activity_id}", headers=_auth(token)).json()
+        assert metric_detail["walking"]["avg_pace_seconds"] == 292.8
+
+        self._set_units(client, token, "imperial")
+        imperial_detail = client.get(
+            f"/api/v1/activities/{activity_id}", headers=_auth(token)
+        ).json()
+
+        # s/km scaled by the exact mile/km ratio, same as stored paces.
+        assert imperial_detail["walking"]["avg_pace_seconds"] == pytest.approx(
+            292.8 * (self.MILE_METERS / 1000)
+        )
 
     def test_short_activity_has_no_splits_in_imperial(
         self, client: TestClient, register_user: Any, uploads_dir: Path

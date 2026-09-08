@@ -5,8 +5,9 @@ import type {
   RowingMetricsView,
   RunningMetricsView,
   StrengthMetricsView,
+  WalkingMetricsView,
 } from "../api/types";
-import { formatPace, formatWeight, paceSuffix } from "../format";
+import { formatDistance, formatPace, formatWeight, paceSuffix } from "../format";
 import { useUnits } from "../units/context";
 import { Card } from "../components/Ui";
 
@@ -28,6 +29,21 @@ export function RunningDetail({ running }: { running: RunningMetricsView }) {
         <Metric label="Avg pace" value={formatPace(running.avg_pace_seconds) + " " + paceSuffix(units)} />
         <Metric label="Best pace" value={formatPace(running.min_pace_seconds) + " " + paceSuffix(units)} />
         <Metric label="Slowest pace" value={formatPace(running.max_pace_seconds) + " " + paceSuffix(units)} />
+      </dl>
+    </Card>
+  );
+}
+
+export function WalkingDetail({ walking, distance }: { walking: WalkingMetricsView; distance: number | null }) {
+  const { units } = useUnits();
+  const paceValue =
+    walking.avg_pace_seconds !== null ? formatPace(walking.avg_pace_seconds) + " " + paceSuffix(units) : "—";
+  return (
+    <Card className="p-5">
+      <h2 className="text-base font-semibold text-ink">Walking</h2>
+      <dl className="mt-3 grid grid-cols-2 gap-3">
+        <Metric label="Avg pace" value={paceValue} />
+        <Metric label="Distance" value={formatDistance(distance, units)} />
       </dl>
     </Card>
   );

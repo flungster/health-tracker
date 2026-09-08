@@ -84,6 +84,11 @@ export type RunningMetricsView = {
   max_pace_seconds: number | null;
 };
 
+export type WalkingMetricsView = {
+  /** Pace in seconds per display distance unit (km when metric, mi otherwise). */
+  avg_pace_seconds: number | null;
+};
+
 export type CyclingMetricsView = {
   power_avg_w: number | null;
   power_max_w: number | null;
@@ -127,6 +132,7 @@ export type ActivityDetailView = {
   splits: SplitView[];
   heart_rate_zones: HrZoneView | null;
   running: RunningMetricsView | null;
+  walking: WalkingMetricsView | null;
   cycling: CyclingMetricsView | null;
   rowing: RowingMetricsView | null;
   strength: StrengthMetricsView | null;

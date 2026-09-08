@@ -36,6 +36,7 @@ to Done in the overview.
 | M14b | Per-user unit system (II): API-side conversion — neutral view fields + `units` flag, imperial mi/ft/s-per-mi/lb/mph (exact factors), splits filtered per system | Done | 2026-09-05 |
 | M14c | Per-user unit system (III): frontend — units context (localStorage + profile sync), unit-aware display everywhere, Profile toggle | Done | 2026-09-05 |
 | M15 | Rowing: stroke rate end-to-end for indoor rowers — db no-op, api stats derivation + import pass-through (incl. sport-override bug fix), frontend no-op | Done | 2026-09-06 |
+| M16 | Walking: pace displayed like running — db no-op, api view-layer `walking` metrics (unit-aware), frontend walking detail view (+ Vitest foundation) | Done | 2026-09-05 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -44,6 +45,47 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M16 — Walking: pace displayed like running (2026-09-06)
+
+Walking gets a first-class detail view. The pace is **computed at read time**
+from the stored moving time and distance (locked decision: API view layer, so
+walking is served by the API like every other sport — no new table).
+
+### M16.1 — db (verified no-op)
+`activities` already carries `moving_seconds` + `distance_m` since M3 — the
+pace is derivable at view time; no migration needed.
+
+### M16.2 — api (done)
+- `WalkingMetricsView` (`avg_pace_seconds`) added to the detail view, emitted
+  for every walk — even one without distance (pace then null), preserving the
+  "exactly one sport object per activity" convention.
+- `ActivityMapper._walking_avg_pace_s_per_km`: null-safe derivation
+  (moving ÷ distance → s/km, rounded to a tenth like stored paces); the value
+  then flows through `display_pace_seconds`, so imperial callers get s/mi by
+  the exact mile/km factor — the derived value converts at read time just like
+  stored ones.
+
+**Gates:** `make test` green (**273 passed**, +2: metric derivation on a
+walk-imported fixture — 1480 s over ~5.05 km = exactly 292.8 s/km — and the
+imperial conversion of that derived pace; plus a `walking: null` assertion on
+the run import) · `make lint` green.
+
+### M16.3 — frontend (done)
+- **Vitest foundation** (the deferred Step 1): `vitest` + `jsdom` +
+  `@testing-library/react` added to web devDeps; vitest configured in
+  `vite.config.ts` (jsdom env, `src/**/*.test.{ts,tsx}`); new `"test": "vitest run"`
+  script; `make test` now runs the API suite *and* the web unit tests.
+- **WalkingDetail** (`web/src/features/SportDetails.tsx`): avg pace (unit-aware
+  `/km`/`/mi`) + distance; dispatched from the detail page for `walking`
+  activities (leaving walking out of the generic-fallback condition). Types:
+  `WalkingMetricsView` + `ActivityDetailView.walking`.
+
+**Gates (final):** `make test` green (**273 API + 15 web** — format helpers and
+WalkingDetail in metric/imperial/null-pace) · `make lint` green. Live on :9090:
+both images rebuilt; a walk-imported sample shows `walking.avg_pace_seconds` of
+292.8 (metric) and 471.2 s/mi after the imperial toggle; bundle confirmed to
+carry the new view. Milestone closed 2026-09-05 after sign-off.
 
 ## M15 — Rowing: stroke rate end-to-end (2026-09-06)
 

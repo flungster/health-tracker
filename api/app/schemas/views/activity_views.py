@@ -86,6 +86,19 @@ class RunningMetricsView(BaseModel):
     max_pace_seconds: float | None
 
 
+class WalkingMetricsView(BaseModel):
+    """Walking-specific metrics (None when the activity is not a walk).
+
+    The pace is computed at view time from the stored moving time and
+    distance (no walking row exists in the database); per-kilometre/mile
+    variation is available through ``splits``. Like the running paces, it is
+    seconds per display distance unit — km when ``units`` is metric, mi when
+    imperial.
+    """
+
+    avg_pace_seconds: float | None
+
+
 class CyclingMetricsView(BaseModel):
     """Cycling-specific metrics (None when the activity is not a ride)."""
 
@@ -144,6 +157,7 @@ class ActivityDetailView(BaseModel):
     splits: list[SplitView]
     heart_rate_zones: HrZoneView | None
     running: RunningMetricsView | None
+    walking: WalkingMetricsView | None
     cycling: CyclingMetricsView | None
     rowing: RowingMetricsView | None
     strength: StrengthMetricsView | None
