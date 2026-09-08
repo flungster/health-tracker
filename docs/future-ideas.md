@@ -4,6 +4,29 @@ Ideas parked here are not scheduled. Each entry records when it was parked,
 why it is interesting, and — where known — a feasibility sketch, so the idea
 can be picked up later without re-research.
 
+## Strava setup instructions in the Server Settings (parked 2026-09-06)
+
+The provider client card on the **Server settings** page
+(`web/src/pages/SettingsPage.tsx`, `ProviderConfigCard`) asks for a **Client ID**
+and **Client Secret** but gives no hint where they come from — the operator has
+to already know Strava's API portal.
+
+Add per-provider setup help to the card (a "How do I get these?" block or a link
+to a docs section) covering, for Strava:
+
+1. Create an application at `https://www.strava.com/settings/api` (select
+   "Read" scope / non-elevated for this use).
+2. Copy the **Client ID** and **Client Secret** from that page into the card
+   (the secret is stored encrypted and never shown again — same rule as today).
+3. Add this server's OAuth callback URL,
+   `https://<host>/api/v1/providers/strava/oauth/callback`, to the app's
+   **Redirect URIs** (the callback route is `api/app/http/providers.py:63`).
+
+Sketch: a short collapsible help block rendered per provider value (the text is
+provider-specific; only Strava exists today), or a pointer into `docs/usage.md`
+if the prose grows too long for the card. Trivial change; parked because it is
+cosmetic and not part of the current milestone scope (M15 — rowing).
+
 ## Reach profile settings by clicking the user name (parked 2026-08-30)
 
 The nav bar shows the signed-in user's first name (`web/src/components/
@@ -61,8 +84,6 @@ dedup and no detection — both rows are kept silently.
   / delete one"); user confirms, nothing is auto-deleted.
 - Only becomes necessary once a second provider (Garmin) ships; with Strava
   alone there is nothing to cross-match.
-
-## Weather along an activity (parked 2026-08-29)
 
 ## Weather along an activity (parked 2026-08-29)
 

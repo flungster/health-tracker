@@ -145,6 +145,33 @@ class TestActivityImport:
         assert detail["sport_type"] == "hiking"
         assert detail["name"] == "Weekend Trail"
 
+    def test_imports_rowing_with_stroke_rate(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        # run_sample.gpx records cadence 170..172 on every trackpoint; imported
+        # as rowing that cadence IS the stroke rate (strokes per minute).
+        token = str(register_user()["token"])
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": ("run_sample.gpx", _read("run_sample.gpx"), "application/octet-stream")},
+            data={"sport_type": "rowing", "name": "Erg Session"},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        detail = response.json()
+
+        assert detail["sport_type"] == "rowing"
+        # Exactly one sport object per activity: rowing populated, running null.
+        assert detail["rowing"] is not None
+        assert detail["running"] is None
+        # Stroke rate derived from the 75 cadence samples: avg round(mean) = 171,
+        # min 170, max 172.
+        assert detail["rowing"]["stroke_rate_avg_spm"] == 171
+        assert detail["rowing"]["stroke_rate_min_spm"] == 170
+        assert detail["rowing"]["stroke_rate_max_spm"] == 172
+        # ~5 km in ~25 min: the standard rowing pace is present too.
+        assert detail["rowing"]["split_500m_seconds"] is not None
+
     def test_rejects_unknown_format(
         self, client: TestClient, register_user: Any, uploads_dir: Path
     ) -> None:

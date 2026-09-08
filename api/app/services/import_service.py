@@ -173,6 +173,10 @@ class ImportService:
 
         # Note: heart-rate zones are NOT computed here — they are relative to
         # the viewer's profile max heart rate and are computed at view time.
+        # Sport-dependent stats (cycling power fallback, rowing pace and stroke
+        # rate) must be computed against the activity's final sport — including
+        # a sport supplied as an import override, which the file may not carry.
+        parsed.sport_type = sport
         stats = self._statistics.compute(parsed)
 
         if activity_uuid is None:
@@ -270,6 +274,9 @@ class ImportService:
             self._rowing_dao.add(
                 ActivityMapper.create_rowing_activity(
                     activity.uuid,
+                    stroke_rate_avg_spm=stats.rowing_stroke_rate_avg_spm,
+                    stroke_rate_min_spm=stats.rowing_stroke_rate_min_spm,
+                    stroke_rate_max_spm=stats.rowing_stroke_rate_max_spm,
                     split_500m_seconds=stats.rowing_split_500m_seconds,
                 )
             )

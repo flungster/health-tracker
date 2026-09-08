@@ -79,6 +79,9 @@ class ActivityStats:
     cycling_power_avg_w: int | None = None
     cycling_power_max_w: int | None = None
     rowing_split_500m_seconds: float | None = None
+    rowing_stroke_rate_avg_spm: int | None = None
+    rowing_stroke_rate_min_spm: int | None = None
+    rowing_stroke_rate_max_spm: int | None = None
 
 
 class ActivityStatistics:
@@ -124,8 +127,37 @@ class ActivityStatistics:
 
         if activity.sport_type == "rowing":
             stats.rowing_split_500m_seconds = self._rowing_500m(activity)
+            self._compute_rowing_stroke_rate(stats, activity, points)
 
         return stats
+
+    def _compute_rowing_stroke_rate(
+        self, stats: ActivityStats, activity: ParsedActivity, points: Sequence[ParsedTrackpoint]
+    ) -> None:
+        """Derive the rowing stroke rate (strokes per minute).
+
+        Precedence: an explicit parser-provided value, then the per-sample
+        cadence (rowing devices export their stroke rate in the record's
+        "cadence" field), then the summary-level cadence (Strava reports a
+        rower's stroke rate as its average cadence). All three stay None when
+        the source recorded no strokes at all.
+        """
+        metrics = activity.sport_metrics
+        if metrics.stroke_rate_avg_spm is not None:
+            stats.rowing_stroke_rate_avg_spm = metrics.stroke_rate_avg_spm
+            stats.rowing_stroke_rate_min_spm = metrics.stroke_rate_min_spm
+            stats.rowing_stroke_rate_max_spm = metrics.stroke_rate_max_spm
+            return
+
+        strokes = [p.cadence_rpm for p in points if p.cadence_rpm]
+        if strokes:
+            stats.rowing_stroke_rate_avg_spm = round(sum(strokes) / len(strokes))
+            stats.rowing_stroke_rate_min_spm = min(strokes)
+            stats.rowing_stroke_rate_max_spm = max(strokes)
+            return
+
+        # Summary fallback (Strava's "average cadence" for rowing).
+        stats.rowing_stroke_rate_avg_spm = activity.cadence_avg_rpm
 
     def compute_splits(
         self, points: Sequence[ParsedTrackpoint], split_type: SplitUnit, unit_m: float

@@ -35,6 +35,7 @@ to Done in the overview.
 | M14a | Per-user unit system (I): profile setting — `imperial_units_enabled_at` timestamp + derived `units_system` on the request/view (no conversion yet) | Done | 2026-09-05 |
 | M14b | Per-user unit system (II): API-side conversion — neutral view fields + `units` flag, imperial mi/ft/s-per-mi/lb/mph (exact factors), splits filtered per system | Done | 2026-09-05 |
 | M14c | Per-user unit system (III): frontend — units context (localStorage + profile sync), unit-aware display everywhere, Profile toggle | Done | 2026-09-05 |
+| M15 | Rowing: stroke rate end-to-end for indoor rowers — db no-op, api stats derivation + import pass-through (incl. sport-override bug fix), frontend no-op | Done | 2026-09-06 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -43,6 +44,47 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M15 — Rowing: stroke rate end-to-end (2026-09-06)
+
+Rowing milestone for indoor rowers (the operator's Hydrow exports to Strava).
+Structure per the new cadence: one activity type per milestone, sub-milestones
+db → api → frontend with a pause after each. **Finding that shaped the slice:**
+rowing stroke rate was dropped at import from *every* source — the columns and
+`ParsedSportMetrics.stroke_rate_*` fields all existed, but no code path ever
+populated or persisted them (RowingDetail's stroke-rate metrics always rendered "—").
+
+### M15.1 — db (verified no-op)
+`rowing_activity` already carries `stroke_rate_avg/min/max_spm` +
+`split_500m_seconds` since the M3 schema — no migration needed (additive-only
+was the requirement; none was necessary).
+
+### M15.2 — api (done)
+**Decision: three-level precedence in `ActivityStatistics`, mirroring the
+cycling-power pattern — no parser changes needed:**
+1. explicit `sport_metrics.stroke_rate_*` (a first-priority hook for a decoder
+   that ever exposes stroke rate directly);
+2. per-sample cadence — rowing devices export their stroke rate in the record's
+   "cadence" field (fitdecode 0.11 has no stroke-rate fields at all, and our
+   FIT parser already reads record `cadence` into trackpoints);
+3. summary-level cadence — Strava reports a rower's stroke rate as the
+   activity's `average_cadence` (already converted to `cadence_avg_rpm`; the
+   existing rowing fixture test pins 26.4 → 26).
+
+**Latent bug fixed along the way:** stats were computed against
+`parsed.sport_type` *before* the sport override/default was resolved, so an
+import overridden to rowing (or cycling) never ran that sport's stat branches.
+The resolved sport is now assigned to the parsed activity before `compute()`.
+
+**Gates:** `make test` green (**271 passed**, +6: five stroke-rate precedence
+unit tests, one API integration — `run_sample.gpx` imported with a rowing
+override yields avg 171 / min 170 / max 172 spm plus the 500 m split) ·
+`make lint` green (ruff, mypy strict on the new code path, tsc/eslint).
+
+### M15.3 — frontend (confirmed no-op)
+No change made: `RowingDetail` already renders stroke-rate avg/min/max and the
+500 m split, and `usage.md` already describes them — the fix was entirely in
+the import path. Milestone closed 2026-09-06 after sign-off.
 
 ## M14c — Per-user unit system (III): frontend display + the toggle (2026-09-05)
 
