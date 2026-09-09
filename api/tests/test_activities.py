@@ -913,6 +913,158 @@ class TestUnitsImperial:
         assert imperial_detail["splits"] == []  # shorter than a tenth of a mile
 
 
+class TestPeriodSummary:
+    """M18 dashboard aggregates over [start, end) (half-open UTC instants)."""
+
+    def _import(self, client: TestClient, token: str, filename: str) -> dict[str, Any]:
+        response = client.post(
+            "/api/v1/activities",
+            files={"file": (filename, _read(filename), "application/octet-stream")},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    def _summary(self, client: TestClient, token: str, start: str, end: str) -> dict[str, Any]:
+        response = client.get(
+            "/api/v1/activities/summary", params={"start": start, "end": end}, headers=_auth(token)
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def test_metric_single_activity(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        detail = self._import(client, token, "run_sample.gpx")
+
+        summary = self._summary(client, token, "2024-06-01T00:00:00Z", "2024-06-07T00:00:00Z")
+
+        assert summary["units"] == "metric"
+        assert summary["activity_count"]["total"] == 1
+        assert summary["activity_count"]["by_sport_type"] == {"running": 1}
+        # Metric = the stored SI values, unconverted (exact equality).
+        assert summary["moving_seconds_total"] == detail["moving_seconds"]
+        assert summary["distance"] == detail["distance"]
+        assert summary["elevation_gain"] == detail["elevation_gain"]
+        assert summary["calories_kcal"] == detail["calories_kcal"]
+        # Mean of one per-activity average is that activity's average.
+        assert summary["avg_heart_rate_bpm"] == detail["heart_rate_avg_bpm"]
+        # No import source provides strength weights yet -> null, not zero.
+        assert summary["weight_lifted"] is None
+        # Daily buckets across [Jun 1, Jun 7): six points, the activity's UTC day.
+        assert [point["start"] for point in summary["distance_trend"]] == [
+            f"2024-06-{day:02d}T00:00:00Z" for day in range(1, 7)
+        ]
+        values = [point["value"] for point in summary["distance_trend"]]
+        assert values == [float(detail["distance"]), 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def test_empty_period_is_null_not_zero(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        self._import(client, token, "run_sample.gpx")
+
+        summary = self._summary(client, token, "2024-07-01T00:00:00Z", "2024-07-08T00:00:00Z")
+
+        assert summary["activity_count"]["total"] == 0
+        assert summary["activity_count"]["by_sport_type"] == {}
+        # No activities -> every metric is null, not zero.
+        assert summary["moving_seconds_total"] is None
+        assert summary["distance"] is None
+        assert summary["elevation_gain"] is None
+        assert summary["calories_kcal"] is None
+        assert summary["avg_heart_rate_bpm"] is None
+        assert summary["weight_lifted"] is None
+        # No distance data at all -> empty series (the card would be null too).
+        assert summary["distance_trend"] == []
+
+    def test_two_activities_sum_and_average(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        run_detail = self._import(client, token, "run_sample.gpx")
+        ride_detail = self._import(client, token, "cycle_sample.tcx")
+
+        # Both fixtures start in June 2024; cover the whole month.
+        summary = self._summary(client, token, "2024-06-01T00:00:00Z", "2024-07-01T00:00:00Z")
+
+        assert summary["activity_count"]["total"] == 2
+        assert summary["activity_count"]["by_sport_type"] == {"running": 1, "cycling": 1}
+        assert summary["distance"] == pytest.approx(
+            float(run_detail["distance"]) + float(ride_detail["distance"])
+        )
+        assert summary["avg_heart_rate_bpm"] == int(
+            round((run_detail["heart_rate_avg_bpm"] + ride_detail["heart_rate_avg_bpm"]) / 2)
+        )
+
+    def test_imperial_converts_distance_and_trend(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        detail = self._import(client, token, "run_sample.gpx")
+
+        response = client.patch(
+            "/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=_auth(token)
+        )
+        assert response.status_code == 200, response.text
+
+        summary = self._summary(client, token, "2024-06-01T00:00:00Z", "2024-06-07T00:00:00Z")
+
+        assert summary["units"] == "imperial"
+        # Exact mile factor, same value as the (converted) detail view.
+        assert summary["distance"] == pytest.approx(float(detail["distance"]) / 1609.344)
+        first_point = summary["distance_trend"][0]
+        assert first_point["value"] == pytest.approx(float(detail["distance"]) / 1609.344)
+
+    def test_year_range_has_monthly_buckets(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        detail = self._import(client, token, "run_sample.gpx")
+
+        summary = self._summary(client, token, "2024-01-01T00:00:00Z", "2025-01-01T00:00:00Z")
+
+        trend = summary["distance_trend"]
+        assert [point["start"][:7] for point in trend] == [f"2024-{m:02d}" for m in range(1, 13)]
+        values = {point["start"][:7]: point["value"] for point in trend}
+        assert values["2024-06"] == pytest.approx(float(detail["distance"]))
+        assert sum(values[m] for m in values if m != "2024-06") == 0.0
+
+    def test_invalid_ranges_422(self, client: TestClient, register_user: Any) -> None:
+        token = str(register_user()["token"])
+
+        malformed = client.get(
+            "/api/v1/activities/summary",
+            params={"start": "not-a-date", "end": "2024-06-07T00:00:00Z"},
+            headers=_auth(token),
+        )
+        assert malformed.status_code == 422
+        assert malformed.json()["error"]["code"] == "VALIDATION_ERROR"
+
+        inverted = client.get(
+            "/api/v1/activities/summary",
+            params={"start": "2024-06-07T00:00:00Z", "end": "2024-06-01T00:00:00Z"},
+            headers=_auth(token),
+        )
+        assert inverted.status_code == 422
+        assert inverted.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_soft_deleted_activities_are_excluded(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        token = str(register_user()["token"])
+        detail = self._import(client, token, "run_sample.gpx")
+
+        response = client.delete(f"/api/v1/activities/{detail['id']}", headers=_auth(token))
+        assert response.status_code == 204, response.text
+
+        summary = self._summary(client, token, "2024-06-01T00:00:00Z", "2024-06-07T00:00:00Z")
+
+        assert summary["activity_count"]["total"] == 0
+        assert summary["distance"] is None
+
+
 # A GPX with a ~132 m trackpoint path (two close samples).
 _SHORT_GPX = b"""<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="health-tracker-test" xmlns="http://www.topografix.com/GPX/1/1">

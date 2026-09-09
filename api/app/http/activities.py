@@ -18,6 +18,7 @@ from app.schemas.requests.activity_requests import ActivityUpdateRequest
 from app.schemas.views.activity_views import (
     ActivitiesListView,
     ActivityDetailView,
+    ActivityPeriodSummaryView,
     SplitsView,
     SportsView,
     SportTypeView,
@@ -77,6 +78,25 @@ def list_activities(
         offset=offset,
         units=units.value,
     )
+
+
+@router.get("/activities/summary", response_model=ActivityPeriodSummaryView)
+def activity_period_summary(
+    start: str,
+    end: str,
+    activity_service: ActivityService = Depends(get_activity_service),
+    current_user: User = Depends(get_current_user),
+) -> ActivityPeriodSummaryView:
+    """Aggregate stats for the user's activities over ``[start, end)`` (dashboard).
+
+    ``start`` / ``end`` are ISO 8601 UTC instants (naive = UTC); the range is
+    half-open and ``start`` must precede ``end``. Unit-bearing values follow the
+    caller's display unit system (named by ``units``); a metric with no data in
+    the period is null, not zero. Declared before the ``{activity_id}`` routes
+    so "summary" is not parsed as an activity id.
+    """
+    summary, units = activity_service.period_summary(current_user.uuid, start, end)
+    return ActivityMapper.to_period_summary_view(summary, units)
 
 
 @router.get("/activities/{activity_id}", response_model=ActivityDetailView)

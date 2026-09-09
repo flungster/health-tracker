@@ -232,10 +232,10 @@ names and are expressed in that system, converted by the API at read time:
 
 | Field | metric (`units = "metric"`) | imperial (`units = "imperial"`) |
 |---|---|---|
-| `distance` (list + detail) | meters | miles (`/ 1609.344`, exact) |
-| `elevation_gain` (list + detail), trackpoint `altitude` | meters | feet (`/ 0.3048`, exact) |
+| `distance` (list, detail + summary) | meters | miles (`/ 1609.344`, exact) |
+| `elevation_gain` (list, detail + summary), trackpoint `altitude` | meters | feet (`/ 0.3048`, exact) |
 | running `avg/min/max_pace_seconds` (detail) | s per km | s per mile (`× 1.609344`, exact) |
-| strength `total_weight` (detail) | kg | lb (`/ 0.45359237`, exact) |
+| strength `total_weight` (detail), summary's `weight_lifted` | kg | lb (`/ 0.45359237`, exact) |
 | trackpoint `speed` | m/s | mph (`× 3600 / 1609.344`) |
 
 Universal values keep their unit in the name and are never converted:
@@ -309,6 +309,55 @@ same shape with `units: "imperial"` and converted values — see above):
   "units": "metric"
 }
 ```
+
+### `GET /activities/summary?start=…&end=…`
+
+Aggregate stats for the caller's activities over a period (the dashboard).
+Both parameters are required ISO 8601 UTC instants; the range is **half-open**
+`[start, end)`. A naive instant (no offset/`Z`) is read as UTC. `start` must
+precede `end`. Soft-deleted activities are excluded, like everywhere else.
+
+```bash
+curl -G http://localhost:9090/api/v1/activities/summary \
+  --data-urlencode "start=2026-09-07T00:00:00Z" \
+  --data-urlencode "end=2026-09-14T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Response `200` (metric caller; an imperial caller gets the converted values —
+see Unit systems):
+
+```json
+{
+  "units": "metric",
+  "activity_count": { "total": 12, "by_sport_type": { "running": 5 } },
+  "moving_seconds_total": 91234,
+  "distance": 61.208,
+  "elevation_gain": 430.5,
+  "calories_kcal": 8123.4,
+  "avg_heart_rate_bpm": 137,
+  "weight_lifted": 2719.8,
+  "distance_trend": [ { "start": "2026-09-07T00:00:00Z", "value": 8.4 } ]
+}
+```
+
+- **Null, not zero**: a metric with no contributing data in the period is
+  `null` (a strength-only week has `distance: null`, not `0`).
+  `activity_count.total` is always a number ≥ 0; `by_sport_type` lists only
+  sports with at least one activity.
+- `avg_heart_rate_bpm` is the simple mean of the per-activity average HRs
+  (over activities that have one), rounded to a whole bpm. `weight_lifted` is
+  the summed total volume of the period's strength sessions; it is `null`
+  until an import source provides weights.
+- `distance_trend`: the distance per bucket, in the caller's display system —
+  day buckets (UTC midnights) for periods of at most ~62 days, month buckets
+  beyond that (the year view). Every bucket in the range is present; days with
+  no distance are `0.0`. An **empty** list means the period has no distance
+  data at all (then `distance` is null too). Buckets follow UTC calendar days;
+  a user-localized boundary would belong to the (parked) timezone work.
+
+Errors: 422 `VALIDATION_ERROR` for a malformed or inverted range; 401
+unauthenticated.
 
 ### `GET /activities/{id}`
 

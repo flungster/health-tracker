@@ -1,7 +1,7 @@
 """Activity business logic: listing, detail, updates, deletion."""
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from app.dao.activity_dao import ActivityDao
@@ -29,7 +29,13 @@ from app.models.strength_activity import StrengthActivity
 from app.models.user_profile import UserProfile
 from app.schemas.mappers.activity_zone_snapshot_mapper import ActivityZoneSnapshotMapper
 from app.schemas.units import UnitSystem, units_for
-from app.services.activity_stats import HrZoneStats, SplitUnit
+from app.services.activity_stats import (
+    HrZoneStats,
+    PeriodSummary,
+    SplitUnit,
+    trend_buckets,
+    zero_fill_trend,
+)
 from app.services.zone_reference import ZoneReference, ZoneSource, resolve_zone_reference
 
 logger = logging.getLogger(__name__)
@@ -86,6 +92,60 @@ class ActivityService:
         activities = self._activity_dao.list_for_user(user_id, limit, offset)
         total = self._activity_dao.count_for_user(user_id)
         return activities, total, self._units_for(user_id)
+
+    def period_summary(
+        self, user_id: UUID, start_raw: str, end_raw: str
+    ) -> tuple[PeriodSummary, UnitSystem]:
+        """Dashboard aggregates over the user's activities in ``[start, end)``.
+
+        ``start_raw`` / ``end_raw`` are ISO 8601 instants (naive = UTC); the
+        range is half-open. The summary carries raw SI values plus the caller's
+        display unit system — conversion happens in the mapper. Raises
+        ValidationError on a malformed or inverted range.
+        """
+        start = self._parse_instant(start_raw, "start")
+        end = self._parse_instant(end_raw, "end")
+        if start >= end:
+            raise ValidationError("'start' must be before 'end'", details=["inverted range"])
+
+        bucket, starts = trend_buckets(start, end)
+        total, moving_total, distance_m, elevation_gain_m, calories_kcal, avg_hr = (
+            self._activity_dao.period_totals(user_id, start, end)
+        )
+        by_sport_type = dict(self._activity_dao.sport_counts_for_period(user_id, start, end))
+        raw_trend = dict(self._activity_dao.distance_trend_for_period(user_id, start, end, bucket))
+        # Empty series when the period has no distance data at all (the card is null too).
+        trend_points = zero_fill_trend(starts, raw_trend) if distance_m is not None else ()
+
+        return (
+            PeriodSummary(
+                start=start,
+                end=end,
+                total_activities=total,
+                by_sport_type=by_sport_type,
+                moving_seconds_total=moving_total,
+                distance_m=distance_m,
+                elevation_gain_m=elevation_gain_m,
+                calories_kcal=calories_kcal,
+                avg_heart_rate_bpm=None if avg_hr is None else int(round(avg_hr)),
+                weight_lifted_kg=self._strength_dao.total_weight_for_period(user_id, start, end),
+                trend_points=trend_points,
+            ),
+            self._units_for(user_id),
+        )
+
+    @staticmethod
+    def _parse_instant(raw: str, param_name: str) -> datetime:
+        """Parse an ISO 8601 instant; naive values are taken as UTC."""
+        try:
+            instant = datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValidationError(
+                f"'{param_name}' must be an ISO 8601 instant (e.g. 2024-06-01T09:00:00Z)"
+            ) from exc
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=UTC)
+        return instant
 
     def get_detail(self, user_id: UUID, activity_id: UUID) -> ActivityDetail:
         """An activity with all its derived rows.

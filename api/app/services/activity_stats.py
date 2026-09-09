@@ -1,8 +1,10 @@
-"""Pure statistics computed from a ParsedActivity at import time.
+"""Pure statistics for activities: import-time and view-time.
 
 Everything the source file does not provide (splits, summary values) is
-derived here from the raw trackpoints, so all formats are treated
-identically. This module is pure: no DB, no HTTP.
+derived here from the raw trackpoints at import time, so all formats are
+treated identically. The module also holds the pure types and helpers for
+the view-time period summary (dashboard): bucketing, zero-fill and the raw
+summary dataclass. This module is pure: no DB, no HTTP.
 
 Heart-rate zones are deliberately NOT computed here: a zone is relative to
 the viewer's *zone reference* (custom boundaries, or a max heart rate that is
@@ -12,15 +14,118 @@ import, so zones are computed at view time from the stored trackpoints (see
 instead of being frozen at import time.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
+from typing import Literal
 
 from app.imports.geo import haversine_m
 from app.imports.parsed import ParsedActivity, ParsedTrackpoint
 
 KM_METERS = 1000.0
 MILE_METERS = 1609.344
+
+
+# Ranges up to this length bucket per day; longer ones (the year view) bucket
+# per month, so the trend stays a readable number of points. Week and month
+# periods are at most ~6 weeks; a year needs months, not 365 daily points.
+_DAILY_MAX_DAYS = 62
+
+
+@dataclass(frozen=True)
+class TrendPoint:
+    """One raw (SI, meters) bucket of the distance-over-time trend.
+
+    ``start`` is the UTC instant that begins the bucket (a midnight for day
+    buckets, a first-of-month 00:00 UTC for month buckets). Buckets with no
+    activity carry ``distance_m == 0.0`` — the series is zero-filled so the
+    chart axis stays continuous (see ``zero_fill_trend``).
+    """
+
+    start: datetime
+    distance_m: float
+
+
+@dataclass(frozen=True)
+class PeriodSummary:
+    """Raw (SI) aggregates for one user's activities over ``[start, end)``.
+
+    Built by the service from DAO rows; unit-bearing values are converted to
+    the caller's display system in ``ActivityMapper.to_period_summary_view``.
+    A metric with no contributing data is None, never zero ("no elevation
+    recorded" != "zero climbed"). ``trend_points`` is empty when the period
+    has no distance data at all; otherwise it covers every bucket in the range.
+
+    ``avg_heart_rate_bpm`` is the simple mean of the per-activity average HRs
+    (over activities that have one), rounded to a whole bpm. ``weight_lifted_kg``
+    is the summed total volume of the period's strength sessions; no import
+    source provides weights yet, so it is None until one does.
+    """
+
+    start: datetime
+    end: datetime
+    total_activities: int
+    by_sport_type: dict[str, int]
+    moving_seconds_total: int | None
+    distance_m: float | None
+    elevation_gain_m: float | None
+    calories_kcal: float | None
+    avg_heart_rate_bpm: int | None
+    weight_lifted_kg: float | None
+    trend_points: tuple[TrendPoint, ...]
+
+
+def trend_buckets(start: datetime, end: datetime) -> tuple[Literal["day", "month"], list[datetime]]:
+    """The trend's bucket starts covering ``[start, end)``, in UTC.
+
+    Returns ``(granularity, starts)``: day buckets (midnights) for ranges of
+    at most ``_DAILY_MAX_DAYS`` days, month buckets (firsts of months 00:00
+    UTC) beyond that. The first bucket may begin before ``start`` — it is the
+    calendar day/month containing ``start``, matching how activities are
+    assigned to buckets (by their UTC date). Buckets with no activity are the
+    caller's concern (``zero_fill_trend``).
+
+    Note: buckets follow UTC calendar days/months; for a user whose local day
+    differs from UTC, an activity near its midnight boundary may land in the
+    neighbouring bucket. User-localized boundaries belong to the (parked)
+    user-timezone work, like the feed's day grouping.
+    """
+    starts: list[datetime] = []
+    if (end - start) <= timedelta(days=_DAILY_MAX_DAYS):
+        day = date(start.year, start.month, start.day)  # UTC calendar date of start
+        while True:
+            bucket_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+            if bucket_start >= end:
+                break
+            starts.append(bucket_start)
+            day += timedelta(days=1)
+        return "day", starts
+
+    year, month = start.year, start.month
+    while True:
+        first_of_month = datetime(year, month, 1, tzinfo=UTC)
+        if first_of_month >= end:
+            break
+        starts.append(first_of_month)
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
+    return "month", starts
+
+
+def zero_fill_trend(
+    bucket_starts: list[datetime], raw_distances_m: Mapping[datetime, float]
+) -> tuple[TrendPoint, ...]:
+    """Join the aggregated per-bucket distances onto every bucket start.
+
+    Buckets without an activity (or with none that has a distance) become
+    0.0, so the returned series is continuous across ``bucket_starts``.
+    """
+    return tuple(
+        TrendPoint(start=start, distance_m=raw_distances_m.get(start, 0.0))
+        for start in bucket_starts
+    )
 
 
 class SplitUnit(StrEnum):

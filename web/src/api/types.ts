@@ -56,6 +56,23 @@ export type ActivitiesListView = {
   units: Units; // display system of all unit-bearing values in this response
 };
 
+/** Aggregate stats for one user's activities over a period (dashboard). */
+export type ActivityPeriodSummaryView = {
+  units: Units; // display system of all unit-bearing values in this response
+  activity_count: {
+    total: number; // always a number (0 for an empty period)
+    by_sport_type: Record<string, number>; // only sports with ≥ 1 activity
+  };
+  moving_seconds_total: number | null; // null when no activity has a moving time
+  distance: number | null; // meters when "metric", miles otherwise
+  elevation_gain: number | null; // meters when "metric", feet otherwise
+  calories_kcal: number | null; // universal — never converted
+  avg_heart_rate_bpm: number | null; // mean of the per-activity averages
+  weight_lifted: number | null; // kg when "metric", lb otherwise (strength volume)
+  /** Empty list = the period has no distance data at all. */
+  distance_trend: { start: string; value: number }[]; // `value` follows `units`
+};
+
 export type SplitView = {
   split_type: string;
   split_index: number;

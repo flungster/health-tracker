@@ -10,6 +10,7 @@ import { ApiError, apiRequest } from "./client";
 import type {
   ActivitiesListView,
   ActivityDetailView,
+  ActivityPeriodSummaryView,
   ClientConfigView,
   ConnectUrlView,
   ProfileView,
@@ -52,6 +53,15 @@ export function useActivity(id: string) {
   return useQuery({
     queryKey: ["activity", id],
     queryFn: () => apiRequest<ActivityDetailView>(`/api/v1/activities/${id}`),
+  });
+}
+
+/** Dashboard aggregates over `[start, end)` (half-open UTC instants). */
+export function usePeriodSummary(start: string, end: string) {
+  const path = `/api/v1/activities/summary?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+  return useQuery({
+    queryKey: ["activities", "summary", start, end],
+    queryFn: () => apiRequest<ActivityPeriodSummaryView>(path),
   });
 }
 

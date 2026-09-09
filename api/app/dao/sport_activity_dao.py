@@ -4,12 +4,14 @@ A generic base DAO parameterized by the sport model class, with one thin
 concrete DAO per sport table.
 """
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.dao.base_dao import BaseDao
+from app.models.activity import Activity
 from app.models.cycling_activity import CyclingActivity
 from app.models.rowing_activity import RowingActivity
 from app.models.running_activity import RunningActivity
@@ -66,3 +68,26 @@ class StrengthActivityDao(SportActivityDao[StrengthActivity]):
 
     def __init__(self, session: Session) -> None:
         super().__init__(session, StrengthActivity)
+
+    def total_weight_for_period(
+        self, user_id: UUID, start: datetime, end: datetime
+    ) -> float | None:
+        """Sum of total volume (kg) over the user's strength sessions in ``[start, end)``.
+
+        Joins through ``activities`` for user scoping and the time window;
+        soft-deleted activities are excluded there. NULL when no session in
+        the range carries a weight (null-not-zero — see ``PeriodSummary``).
+        """
+        statement = (
+            select(func.sum(StrengthActivity.total_weight_kg))
+            .join(Activity, Activity.uuid == StrengthActivity.activity_id)
+            .where(
+                Activity.user_id == user_id,
+                Activity.deleted_at.is_(None),
+                StrengthActivity.total_weight_kg.is_not(None),
+                Activity.started_at >= start,
+                Activity.started_at < end,
+            )
+        )
+        total = self.session.execute(statement).scalar_one()
+        return None if total is None else float(total)

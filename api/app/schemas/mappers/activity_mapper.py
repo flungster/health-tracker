@@ -21,9 +21,12 @@ from app.schemas.units import (
     display_weight,
 )
 from app.schemas.views.activity_views import (
+    ActivityCountView,
     ActivityDetailView,
+    ActivityPeriodSummaryView,
     ActivitySummaryView,
     CyclingMetricsView,
+    DistanceTrendPointView,
     HrZoneView,
     RowingMetricsView,
     RunningMetricsView,
@@ -32,7 +35,7 @@ from app.schemas.views.activity_views import (
     TrackpointView,
     WalkingMetricsView,
 )
-from app.services.activity_stats import HrZoneStats, SplitStats
+from app.services.activity_stats import HrZoneStats, PeriodSummary, SplitStats, TrendPoint
 
 
 class ActivityMapper:
@@ -191,6 +194,42 @@ class ActivityMapper:
             elevation_gain=display_elevation_gain(activity.elevation_gain_m, units),
             heart_rate_avg_bpm=activity.heart_rate_avg_bpm,
         )
+
+    @staticmethod
+    def to_period_summary_view(
+        summary: PeriodSummary, units: UnitSystem
+    ) -> ActivityPeriodSummaryView:
+        """Map the raw (SI) period summary to its view.
+
+        Unit-bearing values are converted into ``units``; nulls pass through
+        unchanged (a metric with no data in the period stays null).
+        """
+        return ActivityPeriodSummaryView(
+            units=units.value,
+            activity_count=ActivityCountView(
+                total=summary.total_activities, by_sport_type=dict(summary.by_sport_type)
+            ),
+            moving_seconds_total=summary.moving_seconds_total,
+            distance=display_distance(summary.distance_m, units),
+            elevation_gain=display_elevation_gain(summary.elevation_gain_m, units),
+            calories_kcal=summary.calories_kcal,
+            avg_heart_rate_bpm=summary.avg_heart_rate_bpm,
+            weight_lifted=display_weight(summary.weight_lifted_kg, units),
+            distance_trend=[
+                ActivityMapper._trend_point_view(point, units) for point in summary.trend_points
+            ],
+        )
+
+    @staticmethod
+    def _trend_point_view(point: TrendPoint, units: UnitSystem) -> DistanceTrendPointView:
+        """Map one raw (SI) trend bucket to its view.
+
+        A trend point always carries a distance — gaps are zero-filled, never
+        null — so the conversion cannot come back None.
+        """
+        value = display_distance(point.distance_m, units)
+        assert value is not None  # invariant of TrendPoint (see above)
+        return DistanceTrendPointView(start=point.start, value=value)
 
     @staticmethod
     def to_split_view(split: ActivitySplit) -> SplitView:

@@ -47,6 +47,51 @@ class ActivitiesListView(BaseModel):
     units: str  # "metric" | "imperial" — display system of all unit-bearing values
 
 
+class ActivityCountView(BaseModel):
+    """How many activities fall in the period, overall and per sport type.
+
+    ``by_sport_type`` lists only sports with at least one activity; the keys
+    are sport-type value strings (the same vocabulary as ``sport_type``).
+    """
+
+    total: int  # always a number (0 for an empty period)
+    by_sport_type: dict[str, int]
+
+
+class DistanceTrendPointView(BaseModel):
+    """One bucket of the distance-over-time trend.
+
+    ``start`` is the UTC instant that begins the bucket (a midnight for day
+    buckets, a first-of-month 00:00 UTC for month buckets); ``value`` is the
+    distance in the caller's display system (the list-level rule — meters when
+    metric, miles otherwise). Buckets with no activity are 0.0; an empty list
+    means the period has no distance data at all (the card is null then).
+    """
+
+    start: datetime
+    value: float
+
+
+class ActivityPeriodSummaryView(BaseModel):
+    """Aggregate stats for one user's activities over a period (dashboard).
+
+    ``units`` names the display system all unit-bearing values are expressed
+    in (same rules as list/detail views). A metric with no contributing data
+    in the period is ``null``, not zero: a strength-only week has
+    ``distance: null`` ("no distance recorded" != "zero travelled").
+    """
+
+    units: str  # "metric" | "imperial" — display system of all unit-bearing values
+    activity_count: ActivityCountView
+    moving_seconds_total: int | None  # null when no activity has a moving time
+    distance: float | None  # meters when units is metric, miles otherwise
+    elevation_gain: float | None  # meters when units is metric, feet otherwise
+    calories_kcal: float | None  # universal — never converted
+    avg_heart_rate_bpm: int | None  # mean of the per-activity averages, whole bpm
+    weight_lifted: float | None  # kg when units is metric, lb otherwise (strength volume)
+    distance_trend: list[DistanceTrendPointView]
+
+
 class SplitView(BaseModel):
     """One per-distance split."""
 

@@ -1,4 +1,4 @@
-/** Charts for the activity detail page (recharts). */
+/** Charts (recharts): activity detail + the dashboard distance trend. */
 
 import {
   Bar,
@@ -13,8 +13,8 @@ import {
   YAxis,
 } from "recharts";
 
-import type { HrZoneView, TrackpointView } from "../api/types";
-import { clockFromSeconds } from "../format";
+import type { HrZoneView, TrackpointView, Units } from "../api/types";
+import { clockFromSeconds, formatDistance } from "../format";
 
 type HeartRateChartProps = {
   trackpoints: TrackpointView[];
@@ -116,6 +116,58 @@ export function HrZonesChart({ zones }: { zones: HrZoneView }) {
               <Cell key={entry.label} fill={ZONE_COLORS[index]} />
             ))}
           </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+type DistanceTrendChartProps = {
+  /** Buckets in the caller's display system (already converted by the API). */
+  points: { start: string; value: number }[];
+  units: Units;
+  /** Day buckets (week/month views) or month buckets (year view). */
+  granularity: "day" | "month";
+};
+
+function dayTick(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function monthTick(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short" });
+}
+
+/** Distance over time for the dashboard (bars per day or month). */
+export function DistanceTrendChart({ points, units, granularity }: DistanceTrendChartProps) {
+  const data = points.map((point) => ({
+    start: point.start,
+    value: point.value,
+    label: granularity === "day" ? dayTick(point.start) : monthTick(point.start),
+  }));
+  return (
+    <div className="h-64 w-full">
+      <ResponsiveContainer>
+        <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
+          <CartesianGrid stroke="#e3e1dc" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6f6d68" }} minTickGap={12} />
+          <YAxis tick={{ fontSize: 11, fill: "#6f6d68" }} />
+          <Tooltip
+            contentStyle={{ borderRadius: 8, border: "1px solid #e3e1dc", fontSize: 12 }}
+            cursor={{ fill: "#f5f4f1" }}
+            labelFormatter={(label, items) => {
+              const iso = (items?.[0]?.payload as { start: string } | undefined)?.start;
+              if (iso === undefined) {
+                return String(label);
+              }
+              const date = new Date(iso);
+              return granularity === "day"
+                ? date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+                : date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+            }}
+            formatter={(value) => [formatDistance(Number(value), units), "Distance"]}
+          />
+          <Bar dataKey="value" fill="#2f6f6a" radius={[4, 4, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>

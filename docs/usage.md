@@ -8,7 +8,32 @@ UI.
 1. Open the app (default <http://localhost:9090>).
 2. Click **Create an account**, enter your name, email, and a password
    (8+ characters). You are signed in immediately.
-3. Your home page is the **Activities** feed — empty until you import something.
+3. Your home page is the **Dashboard** — a snapshot of today (or this week).
+   The full chronological feed is under **Activities** in the top nav.
+
+## Dashboard
+
+The home page (the `health-tracker` brand in the header, or `/`) answers
+"what did I do this day / week / month / year?" at a glance:
+
+- A **Day / Week / Month / Year** switcher picks the period (defaults to
+  *Week*). The choice is remembered in your browser and appears in the URL as
+  `?period=week`, so a link shares that view. Week runs Monday–Sunday, and all
+  boundaries follow your **local** date (the same rule as the feed's *Today* /
+  *Yesterday*). You can only view the current period — browsing past periods is
+  not a v1 feature.
+- Seven cards, for the period: **Activities** (with per-sport chips),
+  **Moving time**, **Distance**, **Elevation gain**, **Calories** (kcal, never
+  converted), **Avg heart rate** (the mean of your activities' average HRs) and
+  **Weight lifted** (total strength volume). A card shows **—** when no
+  activity in the period has that metric ("no distance recorded" is not "zero
+  travelled"). All unit-bearing values follow your [unit system](#units-of-measurement).
+- **Distance over time** chart: one bar per day (Week/Month) or per month
+  (Year). It is hidden on the Day view and stays empty when nothing in the
+  period has a distance.
+
+The cards are display-only — **View all activities** takes you to the
+unfiltered feed.
 
 ## Importing an activity
 
@@ -42,10 +67,11 @@ contributes and how vendor labels are handled.
 
 ## The activity feed
 
-The feed lists your activities grouped by day (local date of the activity's
-start time), newest first — *Today*, *Yesterday*, then full dates. Each card
-shows the sport, name, date/time, distance, duration, average heart rate, and
-calories. **Load more** pulls in older activities.
+The **Activities** page (`/activities`) lists your activities grouped by day
+(local date of the activity's start time), newest first — *Today*,
+*Yesterday*, then full dates. Each card shows the sport, name, date/time,
+distance, duration, average heart rate, and calories. **Load more** pulls in
+older activities.
 
 ## Activity detail
 

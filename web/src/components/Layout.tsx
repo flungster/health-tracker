@@ -1,6 +1,6 @@
 /** Authenticated shell: header with navigation, then the routed page. */
 
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
 
@@ -22,11 +22,11 @@ export default function Layout() {
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-6 px-4 py-3">
-          <span className="text-lg font-bold tracking-tight text-ink">
+          <Link to="/" className="text-lg font-bold tracking-tight text-ink transition-colors hover:text-accent-dark" title="Dashboard">
             health<span className="text-accent">-tracker</span>
-          </span>
+          </Link>
           <nav className="flex items-center gap-1">
-            <NavLink to="/" end className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
+            <NavLink to="/activities" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
               Activities
             </NavLink>
             <NavLink to="/upload" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>

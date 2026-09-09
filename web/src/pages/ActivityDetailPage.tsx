@@ -79,7 +79,7 @@ export default function ActivityDetailPage() {
   function handleDelete() {
     if (window.confirm("Delete this activity? This cannot be undone.")) {
       deleteMutation.mutate(activityId, {
-        onSuccess: () => navigate("/", { replace: true }),
+        onSuccess: () => navigate("/activities", { replace: true }),
       });
     }
   }
@@ -121,7 +121,7 @@ export default function ActivityDetailPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/" className="text-sm text-ink-muted hover:text-ink">
+        <Link to="/activities" className="text-sm text-ink-muted hover:text-ink">
           ← Back to activities
         </Link>
       </div>

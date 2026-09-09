@@ -169,14 +169,20 @@ A Vite + React + TypeScript SPA (`strict`) with:
   TanStack Query hooks in `hooks.ts`. Components never touch `fetch` directly.
 - **`src/auth/`** — session state (JWT + user) in React context, persisted to
   `localStorage`.
-- **`src/pages/`** — Login, Register, Activities (feed), Upload,
-  ActivityDetail, Profile.
+- **`src/pages/`** — Login, Register, Dashboard (home), Activities (feed),
+  Upload, ActivityDetail, Profile, Server settings.
 - **`src/components/`** — shared UI (cards, stat grid, route map, charts,
   upload zone).
 - **`src/features/`** — sport-specific detail panels, dispatched from the
   detail page by `sport_type`, with a generic fallback.
 
-The feed groups activities by local date from `started_at`, so it reads as a
+The dashboard (`/`) shows the current period's aggregates (Day / Week / Month
+/ Year); `src/periods.ts` computes the half-open `[start, end)` instants in
+the browser's local timezone and sends them to `GET /activities/summary`. The
+selection is display-only state (URL param + localStorage), so the server holds
+no per-user period preference.
+
+The feed (`/activities`) groups activities by local date from `started_at`, so it reads as a
 day-grouped timeline (*Today / Yesterday / …*). Maps use Leaflet with
 OpenStreetMap tiles — the only outbound request the browser makes.
 

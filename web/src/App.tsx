@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnly from "./components/PublicOnly";
 import ActivityDetailPage from "./pages/ActivityDetailPage";
 import ActivitiesPage from "./pages/ActivitiesPage";
+import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
@@ -32,7 +33,8 @@ export default function App() {
       />
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
-          <Route path="/" element={<ActivitiesPage />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/activities" element={<ActivitiesPage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/activities/:id" element={<ActivityDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />

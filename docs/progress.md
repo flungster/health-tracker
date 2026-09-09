@@ -37,6 +37,7 @@ to Done in the overview.
 | M14c | Per-user unit system (III): frontend — units context (localStorage + profile sync), unit-aware display everywhere, Profile toggle | Done | 2026-09-05 |
 | M15 | Rowing: stroke rate end-to-end for indoor rowers — db no-op, api stats derivation + import pass-through (incl. sport-override bug fix), frontend no-op | Done | 2026-09-06 |
 | M16 | Walking: pace displayed like running — db no-op, api view-layer `walking` metrics (unit-aware), frontend walking detail view (+ Vitest foundation) | Done | 2026-09-05 |
+| M18 | Dashboard home page with period stats — `GET /activities/summary` (half-open UTC range) + dashboard UI; feed moves to `/activities` (ADR: `docs/adr/m18-dashboard-homepage.md`) | Done | 2026-09-09 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -45,6 +46,91 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M18 — Dashboard homepage with period stats (2026-09-09)
+
+The logged-in home page answers "what did I do this day / week / month /
+year?" at a glance. All decisions are locked in the ADR
+(`docs/adr/m18-dashboard-homepage.md`, grilled 2026-09-08): seven stat cards,
+one distance-over-time chart, current-period-only (Day / Week / Month / Year),
+client-side period selection. The feed keeps its behavior at `/activities`; the
+brand in the header links to the dashboard.
+
+### M18.1 — db (verified no-op)
+Every input is an existing stored column (`activities.*`,
+`strength_activity.total_weight_kg`) — no migration needed.
+
+### M18.2 — api (done)
+- `GET /api/v1/activities/summary?start=…&end=…` — required ISO 8601 UTC
+  instants (naive = UTC), half-open `[start, end)`, 422 on malformed/inverted
+  ranges. Scoped by `user_id`; soft-deleted rows excluded like everywhere else.
+- DAOs: `ActivityDao.period_totals` (count + sums/mean in one aggregate),
+  `sport_counts_for_period`, `distance_trend_for_period` (UTC calendar buckets)
+  and `StrengthActivityDao.total_weight_for_period` (joins through
+  `activities` for user scoping + the window).
+- Pure helpers in `activity_stats`: `trend_buckets` (day buckets up to ~62
+  days, month beyond — the year view) + `zero_fill_trend` (gaps are 0.0, so
+  the series is continuous) + the raw-SI `PeriodSummary` dataclass.
+- View layer: `ActivityPeriodSummaryView` (+ count/trend-point views); the
+  mapper converts per M14 (nulls pass through — **null-not-zero**: a metric
+  with no contributing data is `null`, only the count is always numeric).
+- Per ADR: avg HR = simple mean of per-activity averages (whole bpm);
+  `weight_lifted` is the summed strength volume and stays `null` until an
+  import source provides weights (none do yet). Steps excluded — no parser or
+  provider writes them.
+
+**Gates:** `make test` green (**291 passed**, +18: 7 summary API tests —
+metric exactness, null-not-zero on an empty period, sum/mean across two sports,
+imperial conversion of value *and* trend, monthly buckets on a year range, 422s
+on malformed/inverted ranges, soft-delete exclusion — 7 pure bucketing/zero-fill
+tests, and a new `test_strength_activity_dao.py` pinning the weight sum's user
+scoping, window and null-not-zero rules) · `make lint` green.
+
+### M18.3 — frontend (done)
+- Routing: `/` → new **Dashboard** page; the feed moves to `/activities`
+  (unchanged). The brand is now a link home; the detail page's "Back to
+  activities" and post-delete redirect follow it. Login/register already land
+  on `/` (now the dashboard).
+- `src/periods.ts` (pure, unit-tested): the four segments; boundaries in the
+  **local** timezone (midnights), week = Monday–Sunday fixed; `periodRange`
+  returns the half-open UTC instants. Selection is display-only state per the
+  ADR: URL param `?period=…` backed by localStorage (`health-tracker.dashboard.
+  period`, default **Week**) — no server setting, unlike units (the API needs
+  none here; the client computes `[start, end)`).
+- **DashboardPage**: seven display-only cards (activities + per-sport chips,
+  moving time, distance, elevation gain, calories kcal — never converted, avg
+  HR bpm, weight lifted kg/lb) with null → "—", the **Distance over time**
+  chart (hidden on Day; day bars for Week/Month, month bars for Year), and one
+  **View all activities** link to the unfiltered feed. Values render in the
+  response's `units` system, like every other view (M14).
+- Chart: `DistanceTrendChart` in `Charts.tsx` (bars, unit-aware tooltip via
+  the existing format helpers). Hook: `usePeriodSummary(start, end)` — its key
+  is under the `"activities"` prefix, so imports/syncs refresh it for free.
+
+**Gates (final):** `make lint` green (ruff, mypy 102 api files — strict on the
+new path; tsc + eslint) · `make test` green (**291 API + 25 web**, +10: period
+boundaries incl. Monday/Sunday edges and the year-crossing week, localStorage
+fallback) · no schema change (M18.1 verified no-op; `migrate up` idempotent on
+the live stack) · api + web images rebuilt; live check passed (below).
+
+### Live check (api + web rebuilt on :9090)
+Health ok, version unchanged (0.3.0). Fresh smoke user uploads
+`run_sample.gpx`: metric June summary — count `{total: 1, running: 1}`, moving
+1480 s, distance **exactly** the detail's stored value (5054.329… m),
+elevation 120.0, calories `null` (the GPX carries none — null-not-zero),
+weight lifted `null`, 30 daily buckets with the activity's day holding it all ·
+empty July → total 0, every metric `null`, trend `[]` · imperial toggle →
+distance 3.1406 mi, elevation 393.7 ft (M14b's exact numbers), trend converted
+too · malformed `start` 422s, inverted range 422s with the envelope · served
+bundle carries "Distance over time", "View all activities" and the period
+localStorage key; `/activities` serves 200. Milestone closed 2026-09-09 after
+sign-off.
+
+### Docs
+`api.md`: the summary endpoint (range semantics, null-not-zero, trend bucketing)
++ unit-table rows for the new fields · `usage.md`: a Dashboard section, feed at
+`/activities`, getting-started step 3 · `architecture.md`: page list + a note on
+the display-only period state.
 
 ## M16 — Walking: pace displayed like running (2026-09-06)
 
