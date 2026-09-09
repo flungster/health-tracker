@@ -93,7 +93,7 @@ Clicking an activity opens its detail page:
 - **Time in heart-rate zones** — a bar chart of the seconds spent in each of
   the five zones (see below; needs a zone reference set on your profile).
 - **Sport metrics** — a panel for the activity's sport (running pace, cycling
-  power, rowing stroke rate / 500 m split, strength volume).
+  power, rowing distance / stroke rate / 500 m split, strength volume).
 
 ## Units of measurement
 
@@ -191,7 +191,8 @@ data, where it is yours to keep.
 The **Server settings** page (top nav) is where this server's connections to
 third-party services are configured — the *app* your accounts connect through,
 not your personal accounts. Any account on the server can change these
-settings.
+settings. Each provider card carries a collapsible **How do I get these?**
+block with the setup steps, including this server's exact callback URL.
 
 For each provider (Strava for now):
 

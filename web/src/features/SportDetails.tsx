@@ -67,11 +67,12 @@ export function CyclingDetail({ cycling }: { cycling: CyclingMetricsView }) {
   );
 }
 
-export function RowingDetail({ rowing }: { rowing: RowingMetricsView }) {
+export function RowingDetail({ rowing, distance }: { rowing: RowingMetricsView; distance: number | null }) {
+  const { units } = useUnits();
   return (
     <Card className="p-5">
       <h2 className="text-base font-semibold text-ink">Rowing</h2>
-      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Metric
           label="Avg stroke rate"
           value={rowing.stroke_rate_avg_spm !== null ? `${Math.round(rowing.stroke_rate_avg_spm)} spm` : "—"}
@@ -88,6 +89,7 @@ export function RowingDetail({ rowing }: { rowing: RowingMetricsView }) {
           label="500 m split"
           value={rowing.split_500m_seconds !== null ? formatPace(rowing.split_500m_seconds) : "—"}
         />
+        <Metric label="Distance" value={formatDistance(distance, units)} />
       </dl>
     </Card>
   );

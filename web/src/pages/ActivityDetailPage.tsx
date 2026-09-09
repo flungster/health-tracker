@@ -217,7 +217,7 @@ export default function ActivityDetailPage() {
         <WalkingDetail walking={activity.walking} distance={activity.distance} />
       )}
       {activity.cycling !== null && <CyclingDetail cycling={activity.cycling} />}
-      {activity.rowing !== null && <RowingDetail rowing={activity.rowing} />}
+      {activity.rowing !== null && <RowingDetail rowing={activity.rowing} distance={activity.distance} />}
       {activity.strength !== null && <StrengthDetail strength={activity.strength} />}
       {activity.running === null &&
         activity.walking === null &&

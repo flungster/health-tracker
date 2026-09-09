@@ -38,6 +38,7 @@ to Done in the overview.
 | M15 | Rowing: stroke rate end-to-end for indoor rowers — db no-op, api stats derivation + import pass-through (incl. sport-override bug fix), frontend no-op | Done | 2026-09-06 |
 | M16 | Walking: pace displayed like running — db no-op, api view-layer `walking` metrics (unit-aware), frontend walking detail view (+ Vitest foundation) | Done | 2026-09-05 |
 | M18 | Dashboard home page with period stats — `GET /activities/summary` (half-open UTC range) + dashboard UI; feed moves to `/activities` (ADR: `docs/adr/m18-dashboard-homepage.md`) | Done | 2026-09-09 |
+| M19 | Polish batch: distance on the Rowing card + "How do I get these?" setup help in Server Settings (unparks two future-ideas) | Done | 2026-09-09 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -46,6 +47,53 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M19 — Polish batch: rowing distance + Strava setup help (2026-09-09)
+
+The two smallest parked ideas, shipped together as one polish milestone
+(unparked from `docs/future-ideas.md`, whose entries were removed): distance
+rowed on the **Rowing** card, and "How do I get these?" setup help in Server
+Settings. Both were parked as frontend-only; both stayed that way.
+
+### M19.1 — db + api (verified no-op)
+`ActivityDetailView.distance` already carries the unit-aware distance of every
+activity (M14), and no endpoint changes for either item — nothing to migrate,
+nothing new on the wire.
+
+### M19.2 — frontend (done)
+- **Rowing card**: `RowingDetail` now takes the detail's `distance` and shows a
+  unit-aware **Distance** metric (5th tile, like WalkingDetail's in M16) — the
+  sketch's "render the detail-level `distance`" option, i.e. no view-shape
+  change at all. Feed cards already show distance for every sport, so nothing
+  there (the "optionally on feed cards" part needed no work).
+- **Server settings**: each provider card (Strava today) gains a collapsible
+  **"How do I get these?"** block — the three setup steps (create the app with
+  Read scope at strava.com/settings/api, copy ID/secret into the card, add this
+  server's callback URL to Redirect URIs) with **this deployment's actual
+  callback URL** rendered from `window.location.origin`, instead of a
+  `{PUBLIC_BASE_URL}` placeholder.
+
+**Gates (final):** `make lint` green · `make test` green (**291 API + 28 web**,
++3 RowingDetail cases: metric distance, imperial-converted distance with stroke
+rate untouched, em-dash on null) · no schema change (verified no-op above; API
+image untouched — only web rebuilt).
+
+**Test hygiene fix found along the way:** `SportDetails.test.tsx` never
+unmounted renders (no vitest globals → testing-library's auto-cleanup never
+registered); earlier assertions only passed because their texts were unique.
+`afterEach(cleanup)` added — the new duplicate-text rowing assertions would not
+have survived without it.
+
+### Live check (web rebuilt on :9090)
+Health ok, version unchanged (0.3.0). Served bundle carries "How do I get
+these?" and the strava.com/settings/api link. A rowing-imported fixture (the M15
+override trick) returns `distance: 3.1406` in miles for the still-imperial smoke
+user — exactly what the new card tile renders (3.1 mi) alongside its stroke rate
+and 500 m split.
+
+### Docs
+`usage.md`: rowing card now lists distance in the sport-metrics line; Server
+settings section notes the per-card help block with this server's callback URL.
 
 ## M18 — Dashboard homepage with period stats (2026-09-09)
 

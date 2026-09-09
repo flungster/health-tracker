@@ -171,6 +171,36 @@ function ProviderConfigCard({ provider }: { provider: ProviderInfoView }) {
         {save.isError && <ErrorNote message={save.error.message} />}
         {remove.isError && <ErrorNote message={remove.error.message} />}
       </form>
+
+      {provider.value === "strava" && (
+        <details className="mt-4 rounded-md border border-line bg-canvas px-3 py-2">
+          <summary className="cursor-pointer select-none text-sm font-medium text-accent-dark hover:text-ink">
+            How do I get these?
+          </summary>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-ink-muted">
+            <li>
+              Create an application at{" "}
+              <a
+                href="https://www.strava.com/settings/api"
+                className="font-medium text-accent-dark underline hover:text-ink"
+              >
+                strava.com/settings/api
+              </a>{" "}
+              — the "Read" scope (non-elevated) is all this app needs.
+            </li>
+            <li>
+              Copy the client ID and secret from that page into the fields above. The secret is stored
+              encrypted on this server and never shown again after saving.
+            </li>
+            <li>
+              Add this server's callback URL to the app's redirect URIs:{" "}
+              <code className="break-all rounded bg-line/60 px-1 py-0.5 text-[11px]">
+                {window.location.origin}/api/v1/providers/strava/oauth/callback
+              </code>
+            </li>
+          </ol>
+        </details>
+      )}
     </Card>
   );
 }
