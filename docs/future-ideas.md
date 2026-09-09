@@ -4,6 +4,75 @@ Ideas parked here are not scheduled. Each entry records when it was parked,
 why it is interesting, and — where known — a feasibility sketch, so the idea
 can be picked up later without re-research.
 
+## Rowing: distance rowed as a first-class metric (parked 2026-09-08)
+
+The rowing detail card shows stroke rate and the 500 m split, but distance only
+appears in the generic stat grid shared by all sports. Surface "distance rowed"
+on the **Rowing** card itself (unit-aware via M14, like walking's pace in
+M16), and optionally on feed cards.
+
+- `activities.distance_m` is already stored for rowing (GPX and Strava both
+  provide it) — **no DB change**.
+- Sketch: render the detail-level `distance` inside `RowingDetail`, or add a
+  card-local field to the rowing metrics view — decide when scheduled. Trivial;
+  proposed for a small polish milestone alongside "Strava setup instructions in
+  the Server Settings" (below).
+
+## Per-user frontend themes, dark mode first (parked 2026-09-08)
+
+Let the user pick a UI theme; **dark mode** is the obvious first one. It is
+user-configurable, so — like the units setting (M14) — it lives in the DB
+per user, not client-only.
+
+- **Storage**: a theme is multi-valued (light / dark, possibly "system"), so
+  the reference-table rule applies: `ui_themes` (PK value + description, seeded
+  immutable) + `user_profiles.theme text NULL` FK; NULL = the app default. (The
+  M14 timestamp trick does not apply — it was a two-state setting.)
+- **Frontend**: `web/src/index.css` defines the palette as a small set of
+  semantic tokens (`canvas`, `surface`, `ink*`, `line`, accent, …) in a
+  Tailwind v4 `@theme` block and every component uses those tokens — so dark
+  mode is **redefining ~10 token values under a `.dark` class** (Tailwind v4
+  `@custom-variant dark`), not a component-by-component sweep. The real work:
+  hardcoded colors in the recharts charts and Leaflet map tiles (light/dark
+  tile layers).
+- A theme context mirroring `UnitsProvider`: seed from localStorage pre-paint
+  (no wrong-theme flash before the profile loads), then sync to the profile;
+  `PATCH /users/me/profile` gains a field.
+- Scope decisions for scheduling: include "system" (follow the OS, via a
+  `matchMedia` listener) in v1? Accent-color theming — later, if ever.
+
+## Activity images: user uploads (local-first) (parked 2026-09-08)
+
+Let users attach photos to their activities (most Strava workouts have
+pictures). This half is deliberately **provider-free**: it works with zero
+connected accounts and keeps the app local-first — images are stored locally
+and never leave the server.
+
+- **Storage**: files under `uploads/<user_id>/images/` (mirroring the import
+  file layout); new table `activity_images`: int id PK + uuid, FK →
+  `activities.uuid` (CASCADE), a provenance column (`uploaded` vs `strava`,
+  reference table per the enum rule), original filename / source URL when from
+  a provider, standard audit columns; soft delete.
+- **API**: list/serve per activity (served locally), multipart upload, delete;
+  reuse the existing `MAX_UPLOAD_MB` limit and file-serving pattern.
+- **UI**: a gallery on the activity detail page + an add-photo action.
+
+## Activity images: Strava photo fetch (parked 2026-09-08)
+
+Companion to the upload idea above: when pulling an activity from Strava, also
+fetch its photos and store them locally (provenance `strava`).
+
+- **Research gate — unverified**: the Strava v3 activity JSON exposes
+  `photo_count` and a thumbnail URL (`small_callback_url`), but there is no
+  known *official* public endpoint that downloads **all** photos of an activity
+  (the web UI's full photo list appears to use internal endpoints). Verify what
+  the API actually offers before committing.
+- If only a thumbnail is available: decide whether one cover image per activity
+  is worth the plumbing, or drop this half entirely and let users upload.
+- Fits the provider rules either way (read-only, the connected user's own
+  activities); opt-in on demand like weather, or at sync time — decide when
+  scheduled.
+
 ## Strava setup instructions in the Server Settings (parked 2026-09-06)
 
 The provider client card on the **Server settings** page
