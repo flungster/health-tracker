@@ -49,7 +49,13 @@ class TcxParser(ActivityParser):
             lap_trackpoints = self._parse_lap_trackpoints(lap)
             trackpoints.extend(lap_trackpoints)
 
+            # The spec element is TotalDistanceMeters; some vendors (Hydrow)
+            # write the lap total under a plain DistanceMeters instead. That
+            # name also appears on each trackpoint (cumulative sample values),
+            # so the fallback looks at direct children of <Lap> only.
             lap_distance = _to_float(_text_of(_find_first(lap, "totaldistancemeters")))
+            if lap_distance is None:
+                lap_distance = _to_float(_text_of(_direct_child(lap, "distancemeters")))
             if lap_distance is not None:
                 distance_m = (distance_m or 0.0) + lap_distance
 
@@ -138,6 +144,19 @@ def _find_first(root: Element, local_name: str) -> Element | None:
     for element in root.iter():
         if _local_name(element) == local_name:
             return element
+    return None
+
+
+def _direct_child(root: Element, local_name: str) -> Element | None:
+    """The first *direct* child of ``root`` with the given local tag name.
+
+    Unlike `_find_first`, it does not descend into deeper levels — needed
+    when the same tag name is used at several depths (e.g. DistanceMeters on
+    a <Lap> and again on its trackpoints).
+    """
+    for child in root:
+        if _local_name(child) == local_name:
+            return child
     return None
 
 

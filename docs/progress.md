@@ -39,6 +39,7 @@ to Done in the overview.
 | M16 | Walking: pace displayed like running — db no-op, api view-layer `walking` metrics (unit-aware), frontend walking detail view (+ Vitest foundation) | Done | 2026-09-05 |
 | M18 | Dashboard home page with period stats — `GET /activities/summary` (half-open UTC range) + dashboard UI; feed moves to `/activities` (ADR: `docs/adr/m18-dashboard-homepage.md`) | Done | 2026-09-09 |
 | M19 | Polish batch: distance on the Rowing card + "How do I get these?" setup help in Server Settings (unparks two future-ideas) | Done | 2026-09-09 |
+| M20 | TCX: vendor lap-distance fallback — Hydrow's `<Lap><DistanceMeters>` is now imported (parser fix, no db/api surface change) | Done | 2026-09-09 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -47,6 +48,44 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M20 — TCX: distance for vendor lap elements (Hydrow) (2026-09-09)
+
+Started from a user report: the only rowing activity (imported from a Hydrow
+TCX) showed no distance — not on the M19 card, not in the stat grid.
+
+**Diagnosis:** `activities.distance_m` was NULL — it was never stored, so the
+views were correctly rendering null (not zero). The TCX parser reads lap
+distance from the spec element `<TotalDistanceMeters>` (absent in Hydrow files)
+and otherwise derives distance from GPS trackpoints (indoor rower: no
+coordinates). The file *does* carry the distance — as a plain `<DistanceMeters>`
+direct child of `<Lap>` (the exact total), with the same tag reused on each
+trackpoint for cumulative sample values — and all of it was dropped.
+
+**Fix (parser only, at import time):** lap distance now falls back to the
+vendor's `<DistanceMeters>` when `TotalDistanceMeters` is absent — **direct
+children of `<Lap>` only**, so a descendant lookup can never mistake the first
+trackpoint's cumulative value (0) for the lap total. Precedence: spec element >
+vendor variant > GPS derivation > null. No DB change, no API surface change —
+existing imports are untouched (imports stay immutable; a re-upload picks the
+value up).
+
+**Gates:** `make lint` green · `make test` green (**295 API + 28 web**, +4: new
+Hydrow-style `rower_sample.tcx` fixture — parser test pinning distance 875.42
+and null moving time (the file carries no `MovingTime`, so "—" is correct, not
+a gap); an inline TCX carrying *both* elements proving the spec element wins and
+sample values are ignored; a file with neither → distance null; API integration:
+fixture imported with the rowing override → detail `distance` 875.42).
+
+### Live check (api rebuilt on :9090)
+The user's actual Hydrow TCX re-imported (rowing override, smoke account):
+`distance: 2.4092 mi` for the imperial caller — exactly **3877.28 m**, the lap
+value in their file, through M14's exact mile factor. The old activity row still
+has no distance (imports are immutable) — re-uploading it is the backfill.
+
+### Docs
+`import-formats.md`: TCX section now records the vendor fallback and why it is
+direct-children-only.
 
 ## M19 — Polish batch: rowing distance + Strava setup help (2026-09-09)
 

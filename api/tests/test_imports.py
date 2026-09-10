@@ -104,6 +104,44 @@ class TestTcxParser:
         assert activity.elevation_gain_m is not None
         assert activity.warnings == []
 
+    def test_parses_rower_fixture_with_vendor_lap_distance(self) -> None:
+        # Hydrow-style export (see fixture): no GPS, no spec TotalDistanceMeters.
+        activity = TcxParser().parse(_read("rower_sample.tcx"))
+
+        assert activity.sport_type == "other"  # Sport="Other"; override happens at import
+        assert activity.distance_m == pytest.approx(875.42)  # the lap's <DistanceMeters>
+        assert activity.moving_seconds is None  # file carries no MovingTime
+        assert len(activity.trackpoints) == 5
+
+    def test_spec_total_distance_wins_over_vendor_variant(self) -> None:
+        tcx = (
+            '<?xml version="1.0"?><TrainingCenterDatabase>'
+            "<Activities><Activity Sport='Rowing'><Lap StartTime='2024-06-01T09:00:00Z'>"
+            "<TotalDistanceMeters>500</TotalDistanceMeters>"  # spec element
+            "<DistanceMeters>999</DistanceMeters>"  # vendor variant (ignored)
+            "<Track><Trackpoint><Time>2024-06-01T09:00:00Z</Time>"
+            "<DistanceMeters>875.42</DistanceMeters></Trackpoint>"  # sample value (ignored)
+            "</Track></Lap></Activity></Activities></TrainingCenterDatabase>"
+        )
+
+        activity = TcxParser().parse(tcx.encode("utf-8"))
+
+        assert activity.distance_m == pytest.approx(500.0)
+
+    def test_distance_none_when_neither_distance_element_present(self) -> None:
+        tcx = (
+            '<?xml version="1.0"?><TrainingCenterDatabase>'
+            "<Activities><Activity Sport='Rowing'><Lap StartTime='2024-06-01T09:00:00Z'>"
+            "<Track><Trackpoint><Time>2024-06-01T09:00:00Z</Time></Trackpoint>"
+            "<Trackpoint><Time>2024-06-01T09:00:30Z</Time></Trackpoint>"
+            "</Track></Lap></Activity></Activities></TrainingCenterDatabase>"
+        )
+
+        activity = TcxParser().parse(tcx.encode("utf-8"))
+
+        # No lap distance and no GPS points to derive one from.
+        assert activity.distance_m is None
+
     def test_rejects_malformed_tcx(self) -> None:
         with pytest.raises(ActivityImportError):
             TcxParser().parse(b"this is not xml")

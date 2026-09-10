@@ -40,7 +40,12 @@ library, so health-tracker ships a small in-repo parser:
 - Trackpoints and their `<Extensions>` (heart rate, cadence, power).
 - Sport, name, start/end times, and distance from `<Lap>` / `<Activity>` /
   `<Summary>` elements, using namespace-free local-name lookups.
-- Per-lap distance and moving-time accumulation.
+- Per-lap distance and moving-time accumulation. Lap distance is read from the
+  spec element `<TotalDistanceMeters>`; some vendors (Hydrow) write it under a
+  plain `<DistanceMeters>` on the lap instead, which is used as a fallback —
+  direct children of `<Lap>` only, so the per-trackpoint cumulative
+  `DistanceMeters` values are never mistaken for it. Files with neither and no
+  GPS simply have no distance (`null`).
 
 ### FIT (via `fitdecode`)
 

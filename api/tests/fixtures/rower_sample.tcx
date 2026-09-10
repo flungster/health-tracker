@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+  <Activities>
+    <Activity Sport="Other">
+      <Id>1725694528</Id>
+      <Creator xmlns="http://www.garmin.com/xmlschemas/DeviceProtocol/v1">
+        <Name>Hydrow</Name>
+      </Creator>
+      <!-- Hydrow-style export: no GPS, no TotalDistanceMeters. The lap total
+           is a plain <DistanceMeters> (direct child of Lap); the trackpoints
+           carry the same value cumulatively. -->
+      <Lap StartTime="2026-09-07T22:55:28.516Z">
+        <TotalTimeSeconds>10</TotalTimeSeconds>
+        <DistanceMeters>875.42</DistanceMeters>
+        <Track>
+          <Trackpoint>
+            <Time>2026-09-07T22:55:28.516Z</Time>
+            <DistanceMeters>0</DistanceMeters>
+            <HeartRateBpm><Value>96</Value></HeartRateBpm>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-09-07T22:55:30.516Z</Time>
+            <DistanceMeters>128.7</DistanceMeters>
+            <HeartRateBpm><Value>104</Value></HeartRateBpm>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-09-07T22:55:32.516Z</Time>
+            <DistanceMeters>341.9</DistanceMeters>
+            <HeartRateBpm><Value>121</Value></HeartRateBpm>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-09-07T22:55:34.516Z</Time>
+            <DistanceMeters>603.5</DistanceMeters>
+            <HeartRateBpm><Value>142</Value></HeartRateBpm>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-09-07T22:55:38.516Z</Time>
+            <DistanceMeters>875.42</DistanceMeters>
+            <HeartRateBpm><Value>160</Value></HeartRateBpm>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>

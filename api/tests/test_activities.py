@@ -109,6 +109,27 @@ class TestActivityImport:
         assert detail["cycling"]["power_max_w"] == 240
         assert len(detail["splits"]) >= 4
 
+    def test_imports_rower_tcx_with_vendor_lap_distance(
+        self, client: TestClient, register_user: Any, uploads_dir: Path
+    ) -> None:
+        # Hydrow-style file (Sport="Other", no GPS): the sport comes from the
+        # override, and distance must come out of the vendor's lap element.
+        token = str(register_user()["token"])
+        response = client.post(
+            "/api/v1/activities",
+            files={
+                "file": ("rower_sample.tcx", _read("rower_sample.tcx"), "application/octet-stream")
+            },
+            data={"sport_type": "rowing"},
+            headers=_auth(token),
+        )
+        assert response.status_code == 201, response.text
+        detail = response.json()
+
+        assert detail["sport_type"] == "rowing"
+        # The lap's <DistanceMeters>, in the caller's (metric) display system.
+        assert detail["distance"] == pytest.approx(875.42)
+
     def test_imports_fit_run(
         self, client: TestClient, register_user: Any, uploads_dir: Path
     ) -> None:
