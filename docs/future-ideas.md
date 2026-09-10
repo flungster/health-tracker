@@ -4,6 +4,45 @@ Ideas parked here are not scheduled. Each entry records when it was parked,
 why it is interesting, and — where known — a feasibility sketch, so the idea
 can be picked up later without re-research.
 
+## Import duplicate detection with user-confirmed overwrite (parked 2026-09-09)
+
+If a newly imported activity (file upload *or* provider fetch) is an **exact
+duplicate** of one the user already has, ask: overwrite it (soft-delete the old
+row and insert the new one — chronological position is automatic, since the feed
+orders by `started_at`) or keep both? For a bulk provider sync, confirming many
+potential duplicates is a UX nightmare — there the user gets **one choice for
+the run**: ignore duplicates (today's behavior) or overwrite every match.
+
+Current state, per source:
+- **File uploads**: no dedup at all — re-uploading the same file (or a second
+  export of one workout) silently adds another row; duplicates accumulate in the
+  feed and pollute dashboard stats (M18).
+- **Provider sync**: always ignores — `exists_for_provider(provider,
+  external_activity_id)` skips re-delivered ids (reported as the `skipped` count).
+
+Feasibility sketch — open questions to settle when scheduled:
+- **"Exact duplicate" for files** has no external id; candidates are a hash of
+  the original bytes (fragile across formats — GPX vs FIT exports of one workout
+  differ) or a field tuple (`sport_type`, `started_at`, `duration_seconds`,
+  `distance_m`) (format-robust, but collides on genuinely identical workouts). A
+  confirm dialog showing both activities side by side lets a human make the call.
+- **Two-phase import**: parse → check against the user's active activities → ask
+  before committing (no post-hoc cleanup).
+- **Schema landmine**: the partial unique index on `(provider, external_activity_id)`
+  is *not* soft-delete-aware (and `exists_for_provider` deliberately ignores
+  `deleted_at`) — "soft-delete + re-import" of a provider activity would violate
+  it today. Overwrite needs the index made soft-delete-aware (a migration) or an
+  in-place replacement of the row.
+- **Sync API/UI**: a per-run option, e.g. `POST /providers/{p}/sync
+  {"on_duplicate": "ignore" | "overwrite"}` (default = today's ignore); the sync
+  result view gains a `replaced` count; the control lives on the Profile
+  connection row.
+- Distinct from "Cross-provider duplicate activity detection" (heuristic matching
+  of the same workout arriving via *different* providers) — this one is exact,
+  within a source. Cross-reference both when scheduling either.
+- Bonus fit: re-importing after a parser fix (e.g. M20's Hydrow distance) becomes
+  first-class UX instead of "delete + re-upload".
+
 ## Per-user frontend themes, dark mode first (parked 2026-09-08)
 
 Let the user pick a UI theme; **dark mode** is the obvious first one. It is
@@ -114,8 +153,12 @@ dedup and no detection — both rows are kept silently.
   pairs by distance/duration/HR similarity (GPS overlap optional).
 - Surface candidates in the UI ("These two look like the same run — keep both
   / delete one"); user confirms, nothing is auto-deleted.
-- Only becomes necessary once a second provider (Garmin) ships; with Strava
-  alone there is nothing to cross-match.
+ - Only becomes necessary once a second provider (Garmin) ships; with Strava
+   alone there is nothing to cross-match.
+
+- Related: "Import duplicate detection with user-confirmed overwrite" (parked
+  2026-09-09) — exact duplicates within a single source, with an overwrite
+  option; this entry stays about cross-provider heuristic matching.
 
 ## Weather along an activity (parked 2026-08-29)
 
