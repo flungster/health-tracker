@@ -299,6 +299,16 @@ class TestSyncWalk:
         ).json()
         assert feed["total"] == 102
 
+        # Provenance is exposed in the views (M21), not just stored: list item
+        # and detail both name the provider.
+        item = feed["items"][0]
+        assert item["provider"] == "strava"
+        detail = sync_env.client.get(
+            f"/api/v1/activities/{item['id']}",
+            headers={"Authorization": f"Bearer {sync_env.token}"},
+        ).json()
+        assert detail["provider"] == "strava"
+
         # The walk finished: cursor cleared, last_sync_at stamped.
         account = sync_env.read_account()
         assert account is not None

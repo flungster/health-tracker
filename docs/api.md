@@ -300,7 +300,8 @@ same shape with `units: "imperial"` and converted values — see above):
       "distance": 5054.3,
       "calories_kcal": 410.5,
       "elevation_gain": 88.0,
-      "heart_rate_avg_bpm": 152
+      "heart_rate_avg_bpm": 152,
+      "provider": null
     }
   ],
   "total": 42,
@@ -362,6 +363,9 @@ unauthenticated.
 ### `GET /activities/{id}`
 
 Full detail for one of the caller's activities, in their display unit system.
+Provenance fields say where it came from: `provider` names the provider that
+fetched it (`null` for file imports); `source_format` / `original_filename` are
+set only for file imports (`null` when fetched from a provider).
 
 ```json
 {
@@ -380,6 +384,7 @@ Full detail for one of the caller's activities, in their display unit system.
   "heart_rate_avg_bpm": 152,
   "heart_rate_max_bpm": 178,
   "cadence_avg_rpm": 171,
+  "provider": null,
   "source_format": "gpx",
   "original_filename": "run.gpx",
   "created_at": "2026-08-24T08:05:00Z",

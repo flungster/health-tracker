@@ -46,6 +46,8 @@ export type ActivitySummaryView = {
   calories_kcal: number | null;
   elevation_gain: number | null; // meters when "metric", feet otherwise
   heart_rate_avg_bpm: number | null;
+  /** e.g. "strava"; null for file imports (M21 provenance). */
+  provider: string | null;
 };
 
 export type ActivitiesListView = {
@@ -141,8 +143,10 @@ export type ActivityDetailView = {
   heart_rate_avg_bpm: number | null;
   heart_rate_max_bpm: number | null;
   cadence_avg_rpm: number | null;
-  source_format: string | null;
-  original_filename: string | null;
+  /** e.g. "strava"; null for file imports (M21 provenance). */
+  provider: string | null;
+  source_format: string | null; // e.g. "gpx"; null when fetched from a provider
+  original_filename: string | null; // uploaded file name; null for provider fetches
   created_at: string;
   units: Units; // display system of all unit-bearing values in this response
   /** Splits already filtered to `units` (km rows for metric, mi rows otherwise). */

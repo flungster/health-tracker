@@ -31,6 +31,7 @@ class ActivitySummaryView(BaseModel):
     calories_kcal: float | None
     elevation_gain: float | None
     heart_rate_avg_bpm: int | None
+    provider: str | None  # e.g. "strava"; null for file imports
 
 
 class ActivitiesListView(BaseModel):
@@ -195,8 +196,9 @@ class ActivityDetailView(BaseModel):
     heart_rate_avg_bpm: int | None
     heart_rate_max_bpm: int | None
     cadence_avg_rpm: int | None
-    source_format: str | None
-    original_filename: str | None
+    provider: str | None  # e.g. "strava"; null for file imports
+    source_format: str | None  # e.g. "gpx"; null when fetched from a provider
+    original_filename: str | None  # the uploaded file name; null for provider fetches
     created_at: datetime
     units: str  # "metric" | "imperial" — display system of all unit-bearing values
     splits: list[SplitView]

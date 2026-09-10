@@ -40,6 +40,7 @@ to Done in the overview.
 | M18 | Dashboard home page with period stats — `GET /activities/summary` (half-open UTC range) + dashboard UI; feed moves to `/activities` (ADR: `docs/adr/m18-dashboard-homepage.md`) | Done | 2026-09-09 |
 | M19 | Polish batch: distance on the Rowing card + "How do I get these?" setup help in Server Settings (unparks two future-ideas) | Done | 2026-09-09 |
 | M20 | TCX: vendor lap-distance fallback — Hydrow's `<Lap><DistanceMeters>` is now imported (parser fix, no db/api surface change) | Done | 2026-09-09 |
+| M21 | Import provenance in the UI — provider badge on feed + detail (exposes `activities.provider`; no db change) | Done | 2026-09-09 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -48,6 +49,49 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M21 — Import provenance in the UI (2026-09-09)
+
+First of the two ideas parked on 2026-09-09 (`docs/future-ideas.md`): the UI
+now shows where an activity came from. Provider-fetched activities carry their
+provider's name (e.g. **Strava**) beside the sport badge on feed cards and in
+the detail header; file imports carry no badge — a bare card is one you uploaded.
+
+### M21.1 — db (verified no-op)
+`activities.provider` (+ `external_activity_id`) has been stored since M10a —
+this milestone exposes the existing column; no migration needed.
+
+### Code (api + web)
+- Views: `provider` (value string or null) on the list item and detail views,
+  beside `source_format` / `original_filename`; mapper pass-through. The two
+  provenance pairs are mutually exclusive by construction (file vs provider).
+- Web: new `ProviderBadge` — an outline pill, deliberately dot-less to read as
+  different from the sport badge; renders nothing when null. Placed beside
+  `SportBadge` on the feed card and detail header; types moved in lockstep so
+  `make up` stayed green.
+
+### Tests
+- API: the GPX import pins `provider: null`; the M10d sync-walk test now
+  asserts a synced activity's list item *and* detail expose `provider: "strava"`.
+- Web (+2): the badge renders the capitalized value; null → empty DOM.
+
+**Gates:** `make lint` green (ruff, mypy 102 api files; tsc + eslint) · `make
+test` green (**295 API** — assertions added to existing tests, no new count ·
+**30 web**, +2) · no schema change (verified no-op above).
+
+### Live check (api + web rebuilt on :9090)
+Health ok, version unchanged. A provider row was seeded for the smoke account
+(a clone of an existing run tagged `provider='strava'`, removed afterwards): the
+list shows `"provider": "strava"` on exactly that row and `null` on every file
+import; the detail shows `"provider": "strava"` with a clean provenance pair
+(`source_format: null`, `original_filename: null`). SPA serves.
+
+### Docs
+`api.md`: list/detail examples gain the provenance fields + a note on their pair
+semantics · `usage.md`: feed and detail-header bullets mention the badge.
+
+**Remaining from that parking session:** "Import duplicate detection with
+user-confirmed overwrite" — still parked (needs its design decisions first).
 
 ## M20 — TCX: distance for vendor lap elements (Hydrow) (2026-09-09)
 

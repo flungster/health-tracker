@@ -58,6 +58,8 @@ class TestActivityImport:
 
         assert detail["sport_type"] == "running"  # defaulted: GPX has no sport hint
         assert detail["name"] == "Morning Run"
+        # Provenance: file imports carry no provider (M21).
+        assert detail["provider"] is None
         assert detail["source_format"] == "gpx"
         assert detail["original_filename"] == "run_sample.gpx"
         assert detail["started_at"] == "2024-06-01T09:00:00Z"

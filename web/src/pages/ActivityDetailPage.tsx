@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useActivity, useDeleteActivity, useTrackpoints, useUpdateActivity } from "../api/hooks";
 import { HeartRateChart, HrZonesChart } from "../components/Charts";
+import ProviderBadge from "../components/ProviderBadge";
 import RouteMap from "../components/RouteMap";
 import SportBadge from "../components/SportBadge";
 import SplitsTable from "../components/SplitsTable";
@@ -130,6 +131,7 @@ export default function ActivityDetailPage() {
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <SportBadge sportType={activity.sport_type} />
+            <ProviderBadge provider={activity.provider} />
             {editingName ? (
               <input
                 autoFocus

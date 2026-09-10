@@ -193,6 +193,7 @@ class ActivityMapper:
             calories_kcal=activity.calories_kcal,
             elevation_gain=display_elevation_gain(activity.elevation_gain_m, units),
             heart_rate_avg_bpm=activity.heart_rate_avg_bpm,
+            provider=activity.provider,
         )
 
     @staticmethod
@@ -310,6 +311,7 @@ class ActivityMapper:
             heart_rate_avg_bpm=activity.heart_rate_avg_bpm,
             heart_rate_max_bpm=activity.heart_rate_max_bpm,
             cadence_avg_rpm=activity.cadence_avg_rpm,
+            provider=activity.provider,
             source_format=activity.source_format,
             original_filename=activity.original_filename,
             created_at=activity.created_at,

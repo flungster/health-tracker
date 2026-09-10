@@ -70,16 +70,19 @@ contributes and how vendor labels are handled.
 The **Activities** page (`/activities`) lists your activities grouped by day
 (local date of the activity's start time), newest first — *Today*,
 *Yesterday*, then full dates. Each card shows the sport, name, date/time,
-distance, duration, average heart rate, and calories. **Load more** pulls in
-older activities.
+distance, duration, average heart rate, and calories. Activities fetched from a
+connected account also show the provider's name (e.g. **Strava**) — file
+imports carry no badge, so a bare card is one you uploaded yourself. **Load
+more** pulls in older activities.
 
 ## Activity detail
 
 Clicking an activity opens its detail page:
 
-- **Header** — sport badge, name (click to rename inline), start date/time, and
-  an optional description. A **Delete** button removes the activity (soft
-  delete; confirm in the dialog).
+- **Header** — sport badge (plus the provider's name when it came from a
+  connected account), name (click to rename inline), start date/time, and an
+  optional description. A **Delete** button removes the activity (soft delete;
+  confirm in the dialog).
 - **Stat grid** — distance, time, moving time, elevation gain, calories,
   average pace, average/max heart rate, average cadence. Missing values are
   hidden.

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import type { ActivitySummaryView } from "../api/types";
 import { formatActivityDate, formatClock, formatDistance, formatDuration } from "../format";
 import { useUnits } from "../units/context";
+import ProviderBadge from "./ProviderBadge";
 import SportBadge from "./SportBadge";
 import { Card } from "./Ui";
 
@@ -15,6 +16,7 @@ export default function ActivityCard({ activity }: { activity: ActivitySummaryVi
       <Link to={`/activities/${activity.id}`} className="block">
         <div className="flex items-center gap-3">
           <SportBadge sportType={activity.sport_type} />
+          <ProviderBadge provider={activity.provider} />
           <span className="truncate text-sm font-semibold text-ink">
             {activity.name}
           </span>
