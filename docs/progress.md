@@ -43,6 +43,7 @@ to Done in the overview.
 | M21 | Import provenance in the UI — provider badge on feed + detail (exposes `activities.provider`; no db change) | Done | 2026-09-09 |
 | M22a | Cookie session auth for browser subresources — HttpOnly SameSite=Lax JWT cookie on login/register, `POST /auth/logout`, header-or-cookie resolver (ADR: `docs/adr/m22a-cookie-session-auth.md`) | Done | 2026-09-11 |
 | M22b | Activity images (user upload): db + API core — `activity_images` + `image_sources`, magic-byte-validated uploads under `uploads/<user>/images/`, 4 routes (serve accepts the session cookie) | Done | 2026-09-11 |
+| M22c | Activity images: web gallery on the detail page — thumbnails, add (drop or browse), enlarge lightbox, delete with confirm | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -51,6 +52,38 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M22c — Activity images: web gallery on the detail page (2026-09-11)
+
+The UI half of M22: a **Photos** card on the activity detail page (after the
+stat grid) with thumbnails, an add tile, click-to-enlarge and per-photo delete.
+
+### Code (web)
+- `api/types.ts`: `ActivityImageView` / `ActivityImagesView`.
+- `api/hooks.ts`: `useActivityImages(activityId)` (query, keyed per activity),
+  `useUploadImage` (multipart mutation) and `useDeleteImage`, both invalidating
+  the gallery cache; plus `imageServeUrl(activityId, imageId)`. **No token in
+  the URL** — `<img>` tags authenticate with the session cookie (M22a), which
+  is exactly why that sub-milestone existed.
+- New `components/ActivityImages.tsx`: responsive thumbnail grid; the add tile
+  is a react-dropzone cell (multi-file, JPEG/PNG/WebP only — other files show
+  an inline error naming the rejected file); each thumbnail has a hover delete
+  (×) guarded by `window.confirm` like activity deletion; clicking opens a full-
+  size lightbox (click-outside or Escape closes). Upload errors surface inline.
+
+### Tests (+5, web now 35)
+Thumbnails render with the cookie-served URLs + accessible alt text (filename or
+fallback); empty state shows "No photos yet." and the add tile; delete fires only
+after confirmation (and not when cancelled); no stray error note in the empty
+state.
+
+**Gates:** `make lint` green (tsc + eslint; api unchanged) · `make test`
+green (**310 API** · **35 web**, +5).
+
+### Live check (web rebuilt on :9090)
+SPA serves; the new bundle carries the gallery ("Add photos", "No photos yet.",
+"Remove photo"). The API half of the same flow (upload/list/cookie-serve/delete)
+was verified end-to-end in M22b's live check.
 
 ## M22b — Activity images (user upload): db + API core (2026-09-11)
 

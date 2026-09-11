@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useActivity, useDeleteActivity, useTrackpoints, useUpdateActivity } from "../api/hooks";
+import ActivityImages from "../components/ActivityImages";
 import { HeartRateChart, HrZonesChart } from "../components/Charts";
 import ProviderBadge from "../components/ProviderBadge";
 import RouteMap from "../components/RouteMap";
@@ -176,6 +177,11 @@ export default function ActivityDetailPage() {
       </div>
 
       <StatGrid stats={stats} />
+
+      <Card className="p-5">
+        <h2 className="mb-4 text-base font-semibold text-ink">Photos</h2>
+        <ActivityImages activityId={activityId} />
+      </Card>
 
       {hasGps && (
         <Card className="p-5">

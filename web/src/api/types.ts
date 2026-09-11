@@ -176,6 +176,18 @@ export type TrackpointsView = {
   units: Units; // display system of altitude/speed in this response
 };
 
+export type ActivityImageView = {
+  id: string; // public uuid of the image row (used in URLs)
+  source: string; // e.g. "uploaded"
+  original_filename: string | null;
+  bytes: number; // file size in bytes (display)
+  created_at: string; // ISO 8601 UTC upload time
+};
+
+export type ActivityImagesView = {
+  items: ActivityImageView[]; // upload order
+};
+
 export type SportTypeView = {
   value: string;
   description: string;

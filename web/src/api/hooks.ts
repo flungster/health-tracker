@@ -10,6 +10,8 @@ import { ApiError, apiRequest } from "./client";
 import type {
   ActivitiesListView,
   ActivityDetailView,
+  ActivityImageView,
+  ActivityImagesView,
   ActivityPeriodSummaryView,
   ClientConfigView,
   ConnectUrlView,
@@ -69,6 +71,50 @@ export function useTrackpoints(id: string) {
   return useQuery({
     queryKey: ["trackpoints", id],
     queryFn: () => apiRequest<TrackpointsView>(`/api/v1/activities/${id}/trackpoints`),
+  });
+}
+
+/** URL an image's bytes are served from. No token in the URL: browser
+ *  subresources (<img>) authenticate with the session cookie (M22a). */
+export function imageServeUrl(activityId: string, imageId: string) {
+  return `/api/v1/activities/${activityId}/images/${imageId}`;
+}
+
+export function useActivityImages(activityId: string) {
+  return useQuery({
+    queryKey: ["activity-images", activityId],
+    enabled: activityId !== "",
+    queryFn: () => apiRequest<ActivityImagesView>(`/api/v1/activities/${activityId}/images`),
+  });
+}
+
+export function useUploadImage(activityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return apiRequest<ActivityImageView>(`/api/v1/activities/${activityId}/images`, {
+        method: "POST",
+        formData,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["activity-images", activityId] });
+    },
+  });
+}
+
+export function useDeleteImage(activityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) =>
+      apiRequest<void>(`/api/v1/activities/${activityId}/images/${imageId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["activity-images", activityId] });
+    },
   });
 }
 
