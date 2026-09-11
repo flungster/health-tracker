@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.db.session import make_session_factory
 from app.errors.handlers import register_error_handlers
 from app.http.activities import router as activities_router
+from app.http.activity_images import router as activity_images_router
 from app.http.auth import router as auth_router
 from app.http.health import router as health_router
 from app.http.providers import router as providers_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(users_router)
     application.include_router(activities_router)
+    application.include_router(activity_images_router)
     application.include_router(providers_router)
     return application
 

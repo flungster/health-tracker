@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.dao.activity_dao import ActivityDao
+from app.dao.activity_image_dao import ActivityImageDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_type_dao import ActivityTypeDao
@@ -36,6 +37,9 @@ from app.security import cookies as session_cookie
 from app.security.passwords import PasswordService
 from app.security.secrets import SecretsBox
 from app.security.tokens import TokenService
+from app.services.activity_image_service import (
+    ActivityImageService,
+)
 from app.services.activity_service import ActivityService
 from app.services.activity_stats import ActivityStatistics
 from app.services.auth_service import AuthService
@@ -82,6 +86,20 @@ def get_activity_service(
         cycling_dao=CyclingActivityDao(session),
         rowing_dao=RowingActivityDao(session),
         strength_dao=StrengthActivityDao(session),
+    )
+
+
+def get_activity_image_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+    settings: Settings = Depends(get_settings),
+) -> ActivityImageService:
+    """ActivityImageService bound to the request unit of work and settings."""
+    session: Session = unit_of_work.session
+    return ActivityImageService(
+        unit_of_work,
+        image_dao=ActivityImageDao(session),
+        activity_dao=ActivityDao(session),
+        settings=settings,
     )
 
 

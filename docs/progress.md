@@ -42,6 +42,7 @@ to Done in the overview.
 | M20 | TCX: vendor lap-distance fallback — Hydrow's `<Lap><DistanceMeters>` is now imported (parser fix, no db/api surface change) | Done | 2026-09-09 |
 | M21 | Import provenance in the UI — provider badge on feed + detail (exposes `activities.provider`; no db change) | Done | 2026-09-09 |
 | M22a | Cookie session auth for browser subresources — HttpOnly SameSite=Lax JWT cookie on login/register, `POST /auth/logout`, header-or-cookie resolver (ADR: `docs/adr/m22a-cookie-session-auth.md`) | Done | 2026-09-11 |
+| M22b | Activity images (user upload): db + API core — `activity_images` + `image_sources`, magic-byte-validated uploads under `uploads/<user>/images/`, 4 routes (serve accepts the session cookie) | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -50,6 +51,60 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M22b — Activity images (user upload): db + API core (2026-09-11)
+
+The local-first half of the parked "Activity images" idea: users attach photos
+to their own activities. Bytes live on disk under `uploads/<user_id>/images/`
+(mirroring the import file layout); the DB row is the authoritative record. The
+Strava-fetch half stays parked behind its research gate — `source_url` and the
+`image_sources` reference table are already in place for it.
+
+### M22b.1 — db
+New migration `20260911000001_activity_images.sql`:
+- `image_sources` reference table (PK value + description, seeded with
+  'uploaded', immutable — the provider half adds its values in a later
+  migration, per the reference-table rule).
+- `activity_images`: int id + public uuid; FK → `activities.uuid` (CASCADE);
+  `source` FK → `image_sources`; `original_filename` NULL; **`stored_name`**
+  (the on-disk file name = uuid + media-type extension, so every disk lookup is
+  direct — no probing); `source_url` NULL (reserved for the provider half);
+  `bytes > 0`; audit columns + updated_at trigger; partial index on
+  `activity_id` for live lists. Soft delete.
+
+### Code (api)
+- Model + DAO (`IntIdUuidDao`: `add`, owner-scoped `list_for_activity`
+  excluding soft-deleted rows in upload order, `soft_delete`).
+- `ActivityImageService`: ownership goes through the activity (someone else's
+  reads as 404, matching convention). Upload validates extension allowlist
+  (JPEG/PNG/WebP) + non-empty + ≤ `MAX_UPLOAD_MB` + **magic-byte sniffing** —
+  a renamed non-image is rejected, and the stored format follows the bytes, not
+  the extension. Files go under `uploads/<user_id>/images/`. Serve = row checks
+  + file existence → bytes + media type. Delete commits the row first, then
+  removes the bytes best-effort (a failure only logs — the image is already gone
+  from every view).
+- Routes: `POST`/`GET /activities/{id}/images`, `GET .../images/{uuid}` (bytes),
+  `DELETE` → 204. Serving accepts the header **or** session cookie — exactly
+  what `<img>` tags need (M22a).
+
+### Tests (+11)
+Upload → disk layout + serve roundtrip (exact bytes, `image/png`); wrong
+extension 422; non-image bytes behind a `.jpg` name 422 (the sniff); empty file
+422; oversized 422 (settings override); someone else's activity → 404 and
+nothing stored; list order = upload order; **serve with the session cookie only
+(no Authorization header) — M22a integration**; delete → gone from list, disk
+and serve; an image addressed through a *different* activity's URL → 404; row
+intact but disk file missing (simulated corruption) → 404.
+
+**Gates:** `make lint` green (ruff, mypy 109 api files; tsc + eslint) · `make
+test` green (**310 API**, +11 · **30 web**).
+
+### Live check (api rebuilt on :9090)
+Health ok. Smoke account: imported the sample GPX, uploaded a 70-byte PNG →
+201 (`source=uploaded`, right filename/bytes); list shows one item; **serving
+with the cookie only (no Authorization header) returned 200 `image/png` with
+identical bytes**; delete → 204, then serve → 404. The imported smoke activity
+was soft-deleted afterwards (the M22a account is kept for future live checks).
 
 ## M22a — Cookie session auth for browser subresources (2026-09-11)
 
