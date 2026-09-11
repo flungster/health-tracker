@@ -86,6 +86,11 @@ Clicking an activity opens its detail page:
 - **Stat grid** — distance, time, moving time, elevation gain, calories,
   average pace, average/max heart rate, average cadence. Missing values are
   hidden.
+- **Photos** — your photos for this activity (optional). Drag one or more
+  images onto the **Add photos** tile, or click it to browse — JPEG, PNG and
+  WebP up to the upload limit. Click a photo to view it full-size (close with
+  Escape or by clicking away); hover for the × button to remove it (confirmed in
+  a dialog). Photos are stored on your server — they never leave it.
 - **Route map** — the GPS route on an OpenStreetMap map, shown only when the
   activity has GPS points.
 - **Splits** — one table in your display unit system (per-kilometre or

@@ -52,6 +52,7 @@ users 1───┬───1 user_profiles
             └───* activities 1───┬───* activity_trackpoints
                                  ├───* activity_splits
                                 ├───0..1+ activity_zone_snapshots ──> zone_sources (reference)
+                                ├───* activity_images ──> image_sources (reference)
                                 ├───1 running_activity
                                ├───1 cycling_activity
                                ├───1 rowing_activity
@@ -178,6 +179,18 @@ migration, immutable.
 | `description` | `text` | Display label (e.g. `Kilometres`). |
 | `created_at` | `timestamptz` | Only audit column. |
 
+### `image_sources`
+
+Reference table of the origins an activity image can have (M22). Seeded by
+migration, immutable — the parked Strava-fetch half adds its value in a later
+migration.
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | The source code and the public API value (`uploaded`). |
+| `description` | `text` | Display label (e.g. `Uploaded by the user`). |
+| `created_at` | `timestamptz` | Only audit column. |
+
 ### `providers`
 
 Reference table of external data providers (e.g. Strava) whose activities
@@ -289,6 +302,25 @@ miles. Computed from trackpoints at import time.
 | `cadence_avg_rpm` | `int` NULL | Per-split average, when available. |
 | audit | | |
 
+### `activity_images`
+
+Photos attached to an activity (M22). The file bytes live on disk under
+`uploads/<user_id>/images/`; this row is the authoritative record. Soft delete:
+a deleted image keeps its history but loses serving (its file is removed from
+disk).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigint` PK (identity) | |
+| `uuid` | `uuid` UNIQUE | Public identifier exposed by the API. |
+| `activity_id` | `uuid` FK → activities (uuid) CASCADE | The owning activity. |
+| `source` | `text` FK → image_sources.value | Provenance (`uploaded` today; provider values later). |
+| `original_filename` | `text` NULL | Display name as sent by the uploader. |
+| `stored_name` | `text` | On-disk file name under the user's images dir (uuid + media-type extension). |
+| `source_url` | `text` NULL | Remote URL for future provider fetches; NULL today. |
+| `bytes` | `int` CHECK > 0 | Size of the stored file. |
+| audit | | Partial index on `activity_id` where live (list queries). |
+
 ### `zone_sources`
 
 Reference table of the reference a heart-rate zone snapshot was computed from.
@@ -393,6 +425,7 @@ time of writing.)
 | `20260829000001_drop_activity_hr_zones.sql` | Drops the `activity_hr_zones` table: heart-rate zones are computed at view time from the trackpoints, relative to the viewer's profile max heart rate, instead of being frozen at import. |
 | `20260830000001_zone_config_and_snapshots.sql` | User-configurable heart-rate zones: `user_profiles` gains `date_of_birth` + four optional custom zone tops; new `zone_sources` reference table (seeded `custom` / `max_heart_rate` / `age`) + versioned `activity_zone_snapshots` (one computation per row, at most one live row per activity; superseded rows soft-deleted for history). |
 | `20260905000001_imperial_units_setting.sql` | Per-user unit-system setting (M14a): `user_profiles` gains nullable `imperial_units_enabled_at timestamptz` (NULL = metric default; set = imperial since that instant). No activity rows touched — storage stays SI, conversion is view-layer (M14b). |
+| `20260911000001_activity_images.sql` | Activity images (M22b): `image_sources` reference table (seeded with `uploaded`) + `activity_images` (photos per activity; bytes live on disk under `uploads/<user_id>/images/`, row is authoritative). |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

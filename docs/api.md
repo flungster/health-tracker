@@ -524,6 +524,31 @@ does **not** recompute the derived metrics — it only relabels the activity.
 Soft-delete one of the caller's activities. Response `204` (no body). The
 activity then disappears from `GET /activities` and its detail reads as 404.
 
+### Activity images (M22)
+
+Photos attached to an activity. The bytes are stored on the server under
+`uploads/<user_id>/images/`; these endpoints manage them. All routes require
+the image's activity to belong to the caller (someone else's reads as 404).
+
+| Method & path | What it does |
+|---|---|
+| `POST /activities/{id}/images` | Upload one photo (multipart, field name `file`). JPEG/PNG/WebP only — the extension is checked and the bytes are sniffed, so a renamed non-image is rejected (422). Max size `MAX_UPLOAD_MB`. Response `201`: the image view below. |
+| `GET /activities/{id}/images` | The activity's live images in upload order. Response `200`: `{ "items": [ …image views… ] }`. |
+| `GET /activities/{id}/images/{image_id}` | The image bytes with the right `Content-Type` (`image/jpeg`, `image/png`, `image/webp`). **This endpoint is the one `<img>` tags use** — it accepts the session cookie (set by register/login) in place of a header, since subresources cannot set headers (see Authentication). |
+| `DELETE /activities/{id}/images/{image_id}` | Soft-delete the image and remove its file. Response `204`. It then disappears from the list, and fetching it reads as 404. |
+
+Image view:
+
+```json
+{
+  "id": "…uuid…",          // the image's public uuid (used in URLs)
+  "source": "uploaded",    // provenance; provider values arrive with the Strava half of M22
+  "original_filename": "holiday.png",
+  "bytes": 48213,
+  "created_at": "2026-09-11T09:30:00Z"
+}
+```
+
 ## Sports
 
 ### `GET /sports`

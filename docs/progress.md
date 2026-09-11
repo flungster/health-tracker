@@ -44,6 +44,7 @@ to Done in the overview.
 | M22a | Cookie session auth for browser subresources — HttpOnly SameSite=Lax JWT cookie on login/register, `POST /auth/logout`, header-or-cookie resolver (ADR: `docs/adr/m22a-cookie-session-auth.md`) | Done | 2026-09-11 |
 | M22b | Activity images (user upload): db + API core — `activity_images` + `image_sources`, magic-byte-validated uploads under `uploads/<user>/images/`, 4 routes (serve accepts the session cookie) | Done | 2026-09-11 |
 | M22c | Activity images: web gallery on the detail page — thumbnails, add (drop or browse), enlarge lightbox, delete with confirm | Done | 2026-09-11 |
+| M22d | Activity images (user upload): docs + live check — completes the local-first half of M22 | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -52,6 +53,39 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M22d — Activity images (user upload): docs + live check (2026-09-11)
+
+Wraps up the M22 set: user-facing docs for photos, plus an end-to-end live
+check with all four parts (cookie auth, API core, gallery) deployed together.
+
+### Docs
+- `api.md`: an "Activity images" subsection under Activities — all four
+  endpoints, the validation rules (extension allowlist + magic-byte sniffing),
+  the image view shape, and an explicit note that **serve is the `<img>`
+  endpoint** (session cookie instead of a header; cross-references
+  Authentication / the M22a ADR).
+- `usage.md`: a **Photos** bullet in *Activity detail* — add by drag & drop or
+  browse (JPEG/PNG/WebP, upload limit), click to enlarge (Escape closes), hover
+  × removes with confirmation; "stored on your server — they never leave it".
+- `data-model.md`: relationship tree + table docs for `activity_images` (incl.
+  the `stored_name` / reserved-`source_url` semantics) and the `image_sources`
+  reference table, plus the migration row.
+
+### Live check (:9090 — api + web as deployed)
+Health ok (version unchanged). Smoke account: GPX import → PNG upload (201)
+→ **cookie-only serve 200 `image/png`** → list shows one item → delete (204)
+→ smoke activity soft-deleted. Gallery strings were verified in the M22c bundle
+check; the API half in M22b's live check.
+
+**Gates:** `make lint` + `make test` green (**310 API / 35 web**) — no code
+changed in this part.
+
+### M22 set status
+"Activity images: user uploads (local-first)" is complete end-to-end. The
+companion "Strava photo fetch" stays parked in `docs/future-ideas.md` behind
+its research gate — the schema is already prepared for it (`image_sources` +
+the reserved `source_url`).
 
 ## M22c — Activity images: web gallery on the detail page (2026-09-11)
 

@@ -66,26 +66,13 @@ per user, not client-only.
 - Scope decisions for scheduling: include "system" (follow the OS, via a
   `matchMedia` listener) in v1? Accent-color theming — later, if ever.
 
-## Activity images: user uploads (local-first) (parked 2026-09-08)
-
-Let users attach photos to their activities (most Strava workouts have
-pictures). This half is deliberately **provider-free**: it works with zero
-connected accounts and keeps the app local-first — images are stored locally
-and never leave the server.
-
-- **Storage**: files under `uploads/<user_id>/images/` (mirroring the import
-  file layout); new table `activity_images`: int id PK + uuid, FK →
-  `activities.uuid` (CASCADE), a provenance column (`uploaded` vs `strava`,
-  reference table per the enum rule), original filename / source URL when from
-  a provider, standard audit columns; soft delete.
-- **API**: list/serve per activity (served locally), multipart upload, delete;
-  reuse the existing `MAX_UPLOAD_MB` limit and file-serving pattern.
-- **UI**: a gallery on the activity detail page + an add-photo action.
-
 ## Activity images: Strava photo fetch (parked 2026-09-08)
 
-Companion to the upload idea above: when pulling an activity from Strava, also
-fetch its photos and store them locally (provenance `strava`).
+Companion to the user-upload half, which **shipped as M22**
+(`activity_images` + `image_sources`, gallery on the detail page; see
+`docs/progress.md`). When pulling an activity from Strava, also fetch its
+photos and store them locally (provenance `strava` — the value to add to
+`image_sources`, into the reserved `source_url`).
 
 - **Research gate — unverified**: the Strava v3 activity JSON exposes
   `photo_count` and a thumbnail URL (`small_callback_url`), but there is no
