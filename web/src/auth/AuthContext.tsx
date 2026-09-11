@@ -44,6 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort: clears the HttpOnly session cookie used by <img> tags (M22a).
+    // Never blocks the UI; local state is cleared regardless.
+    void apiRequest<void>("/api/v1/auth/logout", { method: "POST" }).catch(
+      () => undefined,
+    );
     clearAuth();
     setUser(null);
   }, []);

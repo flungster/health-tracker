@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
@@ -136,6 +137,81 @@ def test_error_envelope_shape(client: TestClient) -> None:
     error = body["error"]
     assert set(error.keys()) == {"code", "message", "details"}
     assert isinstance(error["details"], list)
+
+
+def _session_cookie(response: httpx.Response) -> str | None:
+    """The ht_session cookie value from a response's Set-Cookie headers, if any."""
+    for raw in response.headers.get_list("set-cookie"):
+        name, _, rest = raw.partition("=")
+        if name == "ht_session":
+            return rest.split(";")[0] or None
+    return None
+
+
+def test_login_sets_session_cookie(client: TestClient, register_user: Any) -> None:
+    register_user(email="bob@example.com", first_name="Bob")
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "bob@example.com", "password": "supersecret1"},
+    )
+    assert response.status_code == 200, response.text
+
+    cookie = _session_cookie(response)
+    assert cookie is not None
+    assert cookie == response.json()["token"]
+
+    raw = next(h for h in response.headers.get_list("set-cookie") if h.startswith("ht_session="))
+    assert "httponly" in raw.lower()
+    assert "samesite=lax" in raw.lower()
+    assert "path=/api/v1" in raw.lower()
+
+
+def test_register_sets_session_cookie(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "first_name": "Alice",
+            "last_name": "Doe",
+            "email": "alice@example.com",
+            "password": "supersecret1",
+        },
+    )
+    assert response.status_code == 201, response.text
+    cookie = _session_cookie(response)
+    assert cookie is not None
+    assert cookie == response.json()["token"]
+
+
+def test_cookie_authenticates_without_header(client: TestClient, register_user: Any) -> None:
+    """The session cookie (kept by the TestClient jar) authenticates on its own."""
+    register_user(email="bob@example.com", first_name="Bob")
+    client.post(
+        "/api/v1/auth/login",
+        json={"email": "bob@example.com", "password": "supersecret1"},
+    )
+
+    # No Authorization header: only the cookie identifies the caller.
+    me = client.get("/api/v1/users/me")
+    assert me.status_code == 200, me.text
+    assert me.json()["email"] == "bob@example.com"
+
+
+def test_logout_clears_session_cookie(client: TestClient, register_user: Any) -> None:
+    register_user(email="bob@example.com", first_name="Bob")
+    client.post(
+        "/api/v1/auth/login",
+        json={"email": "bob@example.com", "password": "supersecret1"},
+    )
+
+    response = client.post("/api/v1/auth/logout")
+    assert response.status_code == 204
+
+    raw = next(h for h in response.headers.get_list("set-cookie") if h.startswith("ht_session="))
+    assert "max-age=0" in raw.lower()
+
+    # The cookie jar is now empty: header-less requests are unauthenticated.
+    me = client.get("/api/v1/users/me")
+    assert me.status_code == 401
 
 
 class TestAuthRateLimiting:

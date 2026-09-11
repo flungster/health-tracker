@@ -32,6 +32,7 @@ from app.imports import build_default_detector
 from app.models.user import User
 from app.providers.factory import build_provider_registry
 from app.providers.registry import ProviderRegistry
+from app.security import cookies as session_cookie
 from app.security.passwords import PasswordService
 from app.security.secrets import SecretsBox
 from app.security.tokens import TokenService
@@ -196,22 +197,39 @@ def get_provider_config_service(
     )
 
 
+def _extract_token(request: Request) -> str | None:
+    """The bearer token from the Authorization header, else the session cookie.
+
+    The cookie fallback exists for browser subresources that cannot set
+    headers (activity photo ``<img>`` tags, M22). See the M22a ADR.
+    """
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+    cookie = request.cookies.get(session_cookie.COOKIE_NAME)
+    if cookie:
+        return cookie
+    return None
+
+
 def get_current_user(
     request: Request,
     unit_of_work: UnitOfWork = Depends(get_unit_of_work),
     token_service: TokenService = Depends(get_token_service),
 ) -> User:
-    """Resolve the authenticated user from the Authorization header.
+    """Resolve the authenticated user from a header or session cookie.
 
-    Raises AuthenticationError (401) when the header is missing, the token
-    is invalid or expired, or the account no longer exists.
+    Raises AuthenticationError (401) when no token is present, the token is
+    invalid or expired, or the account no longer exists.
     """
-    header = request.headers.get("Authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise AuthenticationError("Missing or malformed Authorization header.")
+    token = _extract_token(request)
+    if token is None:
+        raise AuthenticationError(
+            "No authentication credentials (Authorization header or session cookie)."
+        )
 
-    user_id = token_service.verify(token.strip())
+    user_id = token_service.verify(token)
     if user_id is None:
         raise AuthenticationError("Invalid or expired token.")
 

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # random value (e.g. `openssl rand -hex 32`).
     jwt_secret: str = "insecure-dev-secret-000000000000000000000000000000"
     jwt_token_ttl_days: int = 30
+    # Set true when the app is served over HTTPS (e.g. behind a TLS reverse
+    # proxy) so the session cookie is only ever sent over secure connections.
+    session_cookie_secure: bool = False
     uploads_dir: str = "/data/uploads"
     max_upload_mb: int = 50
     # Maximum trackpoints in one imported file; larger files are rejected so

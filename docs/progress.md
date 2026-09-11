@@ -41,6 +41,7 @@ to Done in the overview.
 | M19 | Polish batch: distance on the Rowing card + "How do I get these?" setup help in Server Settings (unparks two future-ideas) | Done | 2026-09-09 |
 | M20 | TCX: vendor lap-distance fallback — Hydrow's `<Lap><DistanceMeters>` is now imported (parser fix, no db/api surface change) | Done | 2026-09-09 |
 | M21 | Import provenance in the UI — provider badge on feed + detail (exposes `activities.provider`; no db change) | Done | 2026-09-09 |
+| M22a | Cookie session auth for browser subresources — HttpOnly SameSite=Lax JWT cookie on login/register, `POST /auth/logout`, header-or-cookie resolver (ADR: `docs/adr/m22a-cookie-session-auth.md`) | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -49,6 +50,44 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M22a — Cookie session auth for browser subresources (2026-09-11)
+
+Foundation for M22 (activity images): `<img>` tags cannot set the
+`Authorization: Bearer` header, so owner-scoped image serving needs a
+header-less auth path. The session JWT is now mirrored into an HttpOnly cookie;
+**Bearer stays primary**, the cookie is a fallback (ADR:
+`docs/adr/m22a-cookie-session-auth.md`, decision made with the user — query-param
+JWT and short-lived signed URLs were considered and rejected).
+
+### Code (api + web)
+- New `app/security/cookies.py`: name/path constants (`ht_session`,
+  `Path=/api/v1`) + set/clear helpers — `HttpOnly; SameSite=Lax`, plus `Secure`
+  when the new setting `SESSION_COOKIE_SECURE=true` (default false for plain-HTTP
+  homelab deployments). Max-Age mirrors the JWT TTL.
+- `POST /auth/login` + `/register`: JSON response unchanged; additionally set the
+  cookie mirroring the issued token. New `POST /auth/logout` → 204 expires it
+  (the bearer token itself is stateless and stays valid until its TTL — no
+  revocation introduced; documented trade-off).
+- `get_current_user`: one shared resolver — Bearer header first, then the cookie.
+  Applied to **all** endpoints; SameSite=Lax is what makes that safe (cross-site
+  subrequests don't send it — see the ADR's security analysis).
+- SPA: `logout()` calls `POST /auth/logout` best-effort before clearing local state.
+
+### Tests (+4)
+- login/register set the cookie (value equals the body token; flags: `httponly`,
+  `samesite=lax`, `path=/api/v1`).
+- A cookie-only request (no Authorization header) authenticates to `/users/me`.
+- logout → 204 + expired cookie; the following cookie-only request is 401.
+
+**Gates:** `make lint` green (ruff, mypy; tsc + eslint) · `make test` green
+(**299 API**, +4 · **30 web**).
+
+### Live check (api + web rebuilt on :9090)
+Throwaway smoke account: register → `set-cookie: ht_session=…; HttpOnly;
+Max-Age=2592000; Path=/api/v1; SameSite=lax`; `/users/me` with the cookie only
+(no header) → 200, correct user; `POST /auth/logout` → 204 + cookie expired;
+subsequent `/users/me` with the stale jar → 401.
 
 ## M21 — Import provenance in the UI (2026-09-09)
 

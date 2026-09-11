@@ -15,8 +15,9 @@ custom client) against the API on port `8000`.
 
 ### Authentication
 
-Every endpoint except `GET /health`, `POST /auth/register`, and
-`POST /auth/login` requires a bearer token:
+Every endpoint except `GET /health`, `POST /auth/register`, `POST /auth/login`
+and `POST /auth/logout` requires a bearer token (or, equivalently, the session
+cookie set by register/login):
 
 ```
 Authorization: Bearer <token>
@@ -24,6 +25,14 @@ Authorization: Bearer <token>
 
 The token is returned by register and login. It is a JWT valid for
 `JWT_TOKEN_TTL_DAYS` days (default 30).
+
+**Session cookie.** Register and login also set the same JWT as an HttpOnly,
+`SameSite=Lax` cookie (`ht_session`, `Path=/api/v1`). Any endpoint accepts the
+cookie as an alternative to the header — this exists for browser subresources
+that cannot set headers (activity photo `<img>` tags; see
+`docs/adr/m22a-cookie-session-auth.md`). API clients should keep using the
+header. `POST /auth/logout` expires the cookie; it does not revoke a bearer
+token that is already in use (tokens are stateless and live until their TTL).
 
 ### Error envelope
 
@@ -116,12 +125,20 @@ Request:
 ```
 
 Response `200`: same shape as register (`user` + `token`). A wrong password
-returns 401 `UNAUTHENTICATED`.
+returns 401 `UNAUTHENTICATED`. The response also sets the session cookie (see
+Authentication above).
 
 **Rate limit** — register and login are throttled per client IP
 (`REGISTER_RATE_LIMIT_PER_MINUTE`, `LOGIN_RATE_LIMIT_PER_MINUTE`; defaults 5
 and 10 per minute). Beyond the limit the response is 429 `RATE_LIMITED` with
 a `Retry-After` header. The limit is in-memory and resets on an API restart.
+
+### `POST /auth/logout`
+
+Expire the session cookie so browser subresources (activity photos) stop
+authenticating for this browser. Returns `204` with no body; requires nothing
+(there is no state to verify — a bearer token already in use stays valid until
+its TTL).
 
 ## Users
 
