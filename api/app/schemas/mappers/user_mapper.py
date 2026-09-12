@@ -70,6 +70,7 @@ class UserMapper:
             effective_max_heart_rate=reference.max_heart_rate if reference is not None else None,
             age=(reference.age if reference is not None else None),
             units_system=UserMapper.units_system_for(profile),
+            timezone=profile.timezone,
         )
 
     @staticmethod
@@ -87,4 +88,5 @@ class UserMapper:
             effective_max_heart_rate=None,
             age=None,
             units_system="metric",  # no profile row -> the default system
+            timezone=None,  # no profile row -> browser-local display
         )

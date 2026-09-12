@@ -52,3 +52,7 @@ class ProfileView(BaseModel):
     # "metric". Display-only — activity values are converted to this system at
     # read time (M14b). Always present, never null.
     units_system: str  # "metric" | "imperial"
+
+    # IANA time-zone name for rendering timestamps and day boundaries (M23a);
+    # null = the browser's local timezone. Display-only, stored as-is.
+    timezone: str | None  # e.g. "Europe/Berlin"

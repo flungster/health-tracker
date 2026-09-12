@@ -17,6 +17,12 @@ dependencies = [
     "gpxpy>=1.6.2",
     "fitdecode>=0.11",
     "python-multipart>=0.0.20",
+    # Full official IANA time-zone database for validating user timezones.
+    # zoneinfo prefers the system tzdb and falls back to this package, so the
+    # valid name set stays complete and consistent even on systems with a
+    # curated/pruned system list (e.g. macOS drops legacy links like
+    # America/Seattle).
+    "tzdata>=2025.1",
     # Provider adapters (Strava) make outbound HTTPS calls to the user's
     # connected third-party accounts.
     "httpx>=0.28",

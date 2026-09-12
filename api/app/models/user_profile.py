@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Uuid
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import IntIdModel, TimestampMixin
@@ -43,6 +43,8 @@ class UserProfile(IntIdModel, TimestampMixin):
     imperial_units_enabled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # IANA time-zone name for display (M23a); NULL = the browser's local zone.
+    timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:
         return f"UserProfile(user_id={self.user_id})"

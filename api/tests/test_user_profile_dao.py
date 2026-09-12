@@ -43,6 +43,7 @@ def _empty_settings(**overrides: Any) -> dict[str, Any]:
         "custom_zone_3_top_bpm": None,
         "custom_zone_4_top_bpm": None,
         "imperial_units_enabled_at": None,
+        "timezone": None,
     }
     settings.update(overrides)
     return settings

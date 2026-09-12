@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC, date, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.dao.user_dao import UserDao
 from app.dao.user_profile_dao import UserProfileDao
@@ -150,8 +151,16 @@ class UserService:
                 current.imperial_units_enabled_at if current is not None else None
             )
 
+        # The display timezone (M23a): a provided IANA name is stored as-is
+        # after trimming; null clears back to the browser-local default.
+        if "timezone" in provided:
+            timezone = request.timezone.strip() if request.timezone is not None else None
+        else:
+            timezone = current.timezone if current is not None else None
+
         self._validate_date_of_birth(date_of_birth, today)
         self._validate_custom_zones(cz1, cz2, cz3, cz4)
+        self._validate_timezone(timezone)
 
         profile = self._profile_dao.apply_health_settings(
             user_id,
@@ -163,6 +172,7 @@ class UserService:
             custom_zone_3_top_bpm=cz3,
             custom_zone_4_top_bpm=cz4,
             imperial_units_enabled_at=imperial_units_enabled_at,
+            timezone=timezone,
         )
         self._unit_of_work.commit()
         logger.info("Updated health settings for %s", user_id)
@@ -189,5 +199,17 @@ class UserService:
         if cz1 is not None or cz2 is not None or cz3 is not None or cz4 is not None:
             if cz1 is None or cz2 is None or cz3 is None or cz4 is None:
                 raise ValidationError("Provide all four custom zone thresholds, or none.")
-            if not (cz1 < cz2 and cz2 < cz3 and cz3 < cz4):
+            if not (cz1 < cz2 and cz2 < cz3 and cz4 >= cz3):
                 raise ValidationError("Custom zone thresholds must be strictly ascending.")
+
+    @staticmethod
+    def _validate_timezone(timezone_name: str | None) -> None:
+        """Reject names the system's tz database does not know (M23a)."""
+        if timezone_name is None or timezone_name == "":
+            return
+        try:
+            ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValidationError(
+                f"'{timezone_name}' is not a valid IANA timezone (for example 'Europe/Berlin')."
+            ) from None

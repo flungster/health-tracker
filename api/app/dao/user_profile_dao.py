@@ -42,6 +42,7 @@ class UserProfileDao(IntIdDao[UserProfile]):
         custom_zone_3_top_bpm: int | None,
         custom_zone_4_top_bpm: int | None,
         imperial_units_enabled_at: datetime | None,
+        timezone: str | None,
     ) -> UserProfile:
         """Write the full resolved health-settings state.
 
@@ -64,5 +65,6 @@ class UserProfileDao(IntIdDao[UserProfile]):
         profile.custom_zone_3_top_bpm = custom_zone_3_top_bpm
         profile.custom_zone_4_top_bpm = custom_zone_4_top_bpm
         profile.imperial_units_enabled_at = imperial_units_enabled_at
+        profile.timezone = timezone
         self.session.flush()
         return profile

@@ -138,6 +138,8 @@ EMPTY_PROFILE: dict[str, Any] = {
     "age": None,
     # Derived display-unit system; metric is the default for a fresh user.
     "units_system": "metric",
+    # Display timezone; null = the browser's local zone (M23a).
+    "timezone": None,
 }
 
 
@@ -274,6 +276,49 @@ def test_profile_omitted_field_kept(client: TestClient, register_user: Any) -> N
     ).json()
     assert view["date_of_birth"] == "1984-05-01"
     assert view["max_heart_rate"] == 185
+
+
+def test_profile_timezone_set_and_cleared(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    # A valid IANA name is stored as-is (trimmed) and shown in the view.
+    set_response = client.patch(
+        "/api/v1/users/me/profile", json={"timezone": "  Europe/Berlin  "}, headers=headers
+    )
+    assert set_response.status_code == 200, set_response.text
+    assert set_response.json() == _view(timezone="Europe/Berlin")
+
+    # An explicit null clears back to the browser-local default.
+    cleared = client.patch("/api/v1/users/me/profile", json={"timezone": None}, headers=headers)
+    assert cleared.status_code == 200, cleared.text
+    cleared_view: dict[str, Any] = cleared.json()
+    assert cleared_view["timezone"] is None
+
+
+def test_profile_timezone_omitted_kept(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    client.patch(
+        "/api/v1/users/me/profile", json={"timezone": "America/Los_Angeles"}, headers=headers
+    )
+    view = client.patch(
+        "/api/v1/users/me/profile", json={"max_heart_rate": 185}, headers=headers
+    ).json()
+    assert view["timezone"] == "America/Los_Angeles"
+
+
+def test_profile_timezone_rejects_unknown_name(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+    response = client.patch(
+        "/api/v1/users/me/profile", json={"timezone": "Not/AZone"}, headers=headers
+    )
+    assert response.status_code == 422
+    error: dict[str, Any] = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert "Not/AZone" in error["message"]
 
 
 def test_profile_rejects_future_date_of_birth(client: TestClient, register_user: Any) -> None:

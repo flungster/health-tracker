@@ -45,6 +45,7 @@ to Done in the overview.
 | M22b | Activity images (user upload): db + API core — `activity_images` + `image_sources`, magic-byte-validated uploads under `uploads/<user>/images/`, 4 routes (serve accepts the session cookie) | Done | 2026-09-11 |
 | M22c | Activity images: web gallery on the detail page — thumbnails, add (drop or browse), enlarge lightbox, delete with confirm | Done | 2026-09-11 |
 | M22d | Activity images (user upload): docs + live check — completes the local-first half of M22 | Done | 2026-09-11 |
+| M23a | User timezone (I): `user_profiles.timezone` IANA name — profile view + PATCH with zoneinfo validation (`tzdata` dep for a consistent valid-name set) | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -53,6 +54,42 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M23a — User timezone (I): stored IANA name on the profile (2026-09-11)
+
+First of a two-part set unparking the "User location + timezone" idea
+(location stays parked — there is no UI to consume it yet). The user's IANA
+time-zone name is stored per profile; **NULL = the browser's local zone**, so a
+fresh user keeps today's behavior exactly. Display-only: stored data stays UTC;
+M23b makes the client render in this zone.
+
+### M23a.1 — db
+`user_profiles.timezone text NULL` (+ comment). Migration verified up **and**
+down on the live stack.
+
+### Code (api)
+- Model/DAO: new nullable column, threaded through `apply_health_settings`
+  (a ``None`` there is a deliberate clear, per the existing convention).
+- `ProfileUpdateRequest.timezone` (≤64 chars) with the standard omit-vs-null
+  semantics: provided → stored trimmed, `null` → cleared to browser-local,
+  omitted → kept.
+- Validation in the service (app error envelope): `zoneinfo.ZoneInfo(name)` —
+  unknown names are rejected with the offending value in the message.
+
+**Portability fix found en route:** macOS ships a *curated* system tz database
+that omits some IANA names, so the valid-name set differed between dev and the
+container. Added `tzdata` (pure-Python, full official database) as a dependency:
+zoneinfo prefers the system tzdb and falls back to it, making validation
+consistent everywhere.
+
+### Tests (+3)
+Set/trim/read-back + explicit-null clears; omitted field keeps the stored zone;
+an unknown name is 422 `VALIDATION_ERROR` naming it. (The first draft's test
+used "America/Seattle" — a name IANA removed in 2015b; the validator rightly
+rejected it and taught us about curated system tz databases.)
+
+**Gates:** `make lint` green (ruff, mypy; tsc + eslint) · `make test`
+green (**313 API**, +3 · **35 web**).
 
 ## M22d — Activity images (user upload): docs + live check (2026-09-11)
 
