@@ -29,6 +29,9 @@ export type ProfileView = {
 
   /** Derived display unit system (never null). */
   units_system: "metric" | "imperial";
+
+  /** Display time zone (IANA name) or null = the browser's local timezone. */
+  timezone: string | null;
 };
 
 /** The display unit system a response's unit-bearing values are expressed in. */

@@ -14,6 +14,7 @@ import { DistanceTrendChart } from "../components/Charts";
 import { Card, EmptyState, ErrorNote, Spinner } from "../components/Ui";
 import { capitalize, formatDistance, formatDuration, formatElevation, formatWeight } from "../format";
 import { PERIODS, periodLabel, periodRange, readStoredPeriod, storePeriod } from "../periods";
+import { useTimezone } from "../timezone/context";
 import type { Period } from "../periods";
 
 const segmentBase = "rounded-md px-4 py-2 text-sm font-semibold transition-colors";
@@ -37,7 +38,9 @@ export default function DashboardPage() {
     setSearchParams({ period: next }, { replace: true });
   }
 
-  const range = periodRange(period);
+  const { timeZone } = useTimezone();
+
+  const range = periodRange(period, undefined, timeZone);
   const { data, isPending, isError, error } = usePeriodSummary(range.start, range.end);
 
   if (isPending) {

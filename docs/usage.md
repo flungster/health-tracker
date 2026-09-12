@@ -116,6 +116,17 @@ switching back restores the exact figures you imported. The choice applies to
 everything you see immediately, and is remembered on this device in the meantime
 so it pre-paints before your profile loads.
 
+## Time zone
+
+All dates and times — the feed's **Today / Yesterday** grouping, activity
+times on cards and detail pages, dashboard period boundaries — are shown in
+your **display timezone**, set on the **Profile** page as an IANA zone name
+(e.g. `Europe/Berlin`; a few common zones are suggested while typing).
+
+Leave it blank to use your device's local time — that is the default. Times
+are stored as UTC instants and converted at render time, so changing your zone
+never rewrites any data: it only changes which local calendar the app shows.
+
 ## Heart-rate zones
 
 Zones are personal: health-tracker computes them against a **zone reference**
@@ -151,12 +162,15 @@ boundaries are percent of that max HR:
 
 ## Profile
 
-The **Profile** page has five parts:
+The **Profile** page has six parts:
 
 - **Account** — your name, email, and join date.
 - **Units of measurement** — choose metric or imperial for all displayed
   distances, elevations and paces (see *Units of measurement*). The change is
   saved as soon as you pick it.
+- **Time zone** — choose the IANA timezone dates and times are shown in, or
+  leave it blank for your device's local time (see *Time zone*). Saved with a
+  button; the blank state is "browser default".
 - **Connected accounts** — connect or disconnect a third-party service (e.g.
   Strava) and sync your activities from it.
 - **Heart-rate zones** — set your max and resting heart rate (bpm), an optional

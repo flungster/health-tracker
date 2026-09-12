@@ -10,6 +10,7 @@ import ConnectedAccounts from "../components/ConnectedAccounts";
 import { Card, ErrorNote, Spinner } from "../components/Ui";
 import { inputClass, labelClass } from "../components/AuthShell";
 import { capitalize, formatActivityDate } from "../format";
+import { useTimezone } from "../timezone/context";
 import { useUnits } from "../units/context";
 
 function connectFailureReason(reason: string | null): string {
@@ -44,6 +45,68 @@ function zoneReferenceText(profile: ProfileView | undefined): string {
   }
 }
 
+/** A handful of common IANA zones to suggest while typing (any valid name works). */
+const COMMON_TIME_ZONES = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "UTC",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Africa/Cairo",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
+type TimezoneFieldProps = {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSave: () => void;
+  isPending: boolean;
+  error: string | null;
+};
+
+/** Profile card for the display time zone (saved independently of the units toggle). */
+function TimezoneField({ draft, onDraftChange, onSave, isPending, error }: TimezoneFieldProps) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-base font-semibold text-ink">Time zone</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Dates, times and day boundaries (Today / Yesterday) are shown in this zone. Leave blank to
+        use your device&apos;s local time.
+      </p>
+      <div className="mt-4 flex gap-2">
+        <input
+          id="timezone"
+          type="text"
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          list="common-timezones"
+          placeholder="(browser default)"
+          className={`${inputClass(false)} max-w-72 flex-1`}
+        />
+        <datalist id="common-timezones">
+          {COMMON_TIME_ZONES.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
+        <button type="button" onClick={onSave} disabled={isPending} className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-dark disabled:opacity-60">
+          {isPending ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {error !== null && <ErrorNote message={error} />}
+    </Card>
+  );
+}
+
 export default function ProfilePage() {
   const { user } = useAuth();
   const { data: profile, isPending } = useProfile();
@@ -51,8 +114,11 @@ export default function ProfilePage() {
   // Separate instance so the units toggle doesn't share pending/success state
   // with the heart-rate form below.
   const unitsMutation = useUpdateProfile();
+  // Separate instance again: the timezone save shares none of this mutation's state.
+  const timezoneMutation = useUpdateProfile();
   const userMutation = useUpdateUser();
   const { units, setUnits } = useUnits();
+  const { timeZone: savedTimeZone, setTimeZone } = useTimezone();
 
   // Server value wins once loaded; context pre-paints before it arrives.
   const activeUnits: Units = profile?.units_system ?? units;
@@ -82,6 +148,20 @@ export default function ProfilePage() {
     setSearchParams({}, { replace: true });
   }, [connectedProvider, connectErrorProvider, setSearchParams]);
 
+  const [timezoneDraft, setTimezoneDraft] = useState<string>("");
+
+  function saveTimeZone() {
+    const trimmed = timezoneDraft.trim();
+    if (timezoneMutation.isPending) {
+      return;
+    }
+    // Empty = the browser's local timezone (stored as null server-side).
+    timezoneMutation.mutate(
+      { timezone: trimmed === "" ? null : trimmed },
+      { onSuccess: (saved) => setTimeZone(saved.timezone) },
+    );
+  }
+
   const [maxHr, setMaxHr] = useState<string>("");
   const [restingHr, setRestingHr] = useState<string>("");
   const [dateOfBirth, setDateOfBirth] = useState<string>(""); // "YYYY-MM-DD"
@@ -108,6 +188,7 @@ export default function ProfilePage() {
     setCustomZone2(profile.custom_zone_2_top_bpm?.toString() ?? "");
     setCustomZone3(profile.custom_zone_3_top_bpm?.toString() ?? "");
     setCustomZone4(profile.custom_zone_4_top_bpm?.toString() ?? "");
+    setTimezoneDraft(profile.timezone ?? "");
   }, [profile]);
 
   if (isPending) {
@@ -209,7 +290,7 @@ export default function ProfilePage() {
           <div className="flex justify-between">
             <dt className="text-ink-muted">Member since</dt>
             <dd className="font-medium text-ink">
-              {user !== null ? formatActivityDate(user.created_at) : "—"}
+              {user !== null ? formatActivityDate(user.created_at, savedTimeZone) : "—"}
             </dd>
           </div>
         </dl>
@@ -241,6 +322,14 @@ export default function ProfilePage() {
         {unitsMutation.isPending && <p className="mt-2 text-sm text-accent-dark">Saving…</p>}
         {unitsMutation.isError && <ErrorNote message={unitsMutation.error.message} />}
       </Card>
+
+      <TimezoneField
+        draft={timezoneDraft}
+        onDraftChange={setTimezoneDraft}
+        onSave={saveTimeZone}
+        isPending={timezoneMutation.isPending}
+        error={timezoneMutation.error?.message ?? null}
+      />
 
       <ConnectedAccounts />
 

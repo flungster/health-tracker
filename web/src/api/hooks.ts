@@ -204,6 +204,7 @@ export type ProfileUpdateInput = {
   custom_zone_3_top_bpm?: number | null;
   custom_zone_4_top_bpm?: number | null;
   units_system?: Units; // "metric" or "imperial"; omitted keeps current
+  timezone?: string | null; // IANA name, or null to clear (browser default)
 };
 
 export function useUpdateProfile() {

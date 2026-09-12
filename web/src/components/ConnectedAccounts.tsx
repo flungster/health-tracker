@@ -13,6 +13,7 @@ import {
 } from "../api/hooks";
 import type { ProviderConnectionView, ProviderInfoView } from "../api/types";
 import { dateDaysAgo, formatActivityDate } from "../format";
+import { useTimezone } from "../timezone/context";
 import { Card, ErrorNote, Spinner } from "./Ui";
 
 export default function ConnectedAccounts() {
@@ -42,6 +43,7 @@ export default function ConnectedAccounts() {
 }
 
 function ProviderRow({ provider }: { provider: ProviderInfoView }) {
+  const { timeZone } = useTimezone();
   const { data: connection, isPending, isError, error } = useProviderConnection(
     provider.value,
   );
@@ -131,9 +133,9 @@ function ProviderRow({ provider }: { provider: ProviderInfoView }) {
               {connection.display_name !== null ? ` · ${connection.display_name}` : ""}
             </p>
             <p className="text-sm text-ink-muted">
-              Connected {formatActivityDate(connection.connected_at)}
+              Connected {formatActivityDate(connection.connected_at, timeZone)}
               {connection.last_sync_at !== null
-                ? ` · Last synced ${formatActivityDate(connection.last_sync_at)}`
+                ? ` · Last synced ${formatActivityDate(connection.last_sync_at, timeZone)}`
                 : " · Not synced yet"}
             </p>
           </div>

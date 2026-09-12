@@ -8,6 +8,7 @@ import type { ActivitySummaryView } from "../api/types";
 import ActivityCard from "../components/ActivityCard";
 import { EmptyState, ErrorNote, Spinner } from "../components/Ui";
 import { dayKey, dayLabel } from "../format";
+import { useTimezone } from "../timezone/context";
 
 type DayGroup = {
   key: string;
@@ -16,6 +17,7 @@ type DayGroup = {
 };
 
 export default function ActivitiesPage() {
+  const { timeZone } = useTimezone();
   const {
     data,
     isPending,
@@ -30,7 +32,7 @@ export default function ActivitiesPage() {
     const all = (data?.pages ?? []).flatMap((page) => page.items);
     const byDay = new Map<string, ActivitySummaryView[]>();
     for (const activity of all) {
-      const key = dayKey(activity.started_at);
+      const key = dayKey(activity.started_at, timeZone);
       const bucket = byDay.get(key);
       if (bucket === undefined) {
         byDay.set(key, [activity]);
@@ -41,8 +43,8 @@ export default function ActivitiesPage() {
     // Keys are ISO dates, so sorting desc = newest day first.
     return [...byDay.entries()]
       .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([key, activities]) => ({ key, label: dayLabel(key), activities }));
-  }, [data]);
+      .map(([key, activities]) => ({ key, label: dayLabel(key, timeZone), activities }));
+  }, [data, timeZone]);
 
   if (isPending) {
     return <Spinner label="Loading your activities…" />;

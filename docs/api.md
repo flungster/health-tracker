@@ -192,7 +192,8 @@ currently in effect (computed from them).
   "zone_source": "age",
   "effective_max_heart_rate": 178,
   "age": 42,
-  "units_system": "metric"
+  "units_system": "metric",
+  "timezone": null
 }
 ```
 
@@ -214,6 +215,11 @@ enabled imperial display units (since a UTC instant recorded in
 `user_profiles.imperial_units_enabled_at`), `"metric"` otherwise (the default).
 Display-only — activity values are always stored in SI units and converted to
 this system at read time (M14b).
+
+`timezone` is the IANA zone name (e.g. `"Europe/Berlin"`) used to render
+dates, times and day boundaries in the client — or `null`, which means "use
+the browser's local timezone". It is display-only: stored timestamps remain
+UTC instants; the client converts them at render time (M23b).
 
 ### `PATCH /users/me/profile`
 
@@ -239,6 +245,11 @@ field keeps the current system. Any other value is rejected with `422
 VALIDATION_ERROR`. Enabling imperial records the instant (UTC) in
 `imperial_units_enabled_at`, so the setting answers "is it on?" and "since
 when?"; activity values are converted to imperial at read time (M14b).
+
+`timezone` sets the display timezone: a valid IANA name (`"Europe/Berlin"`),
+or `null` to clear it back to the browser's local timezone (an omitted field
+keeps the current value). An unknown name is rejected with `422
+VALIDATION_ERROR`. Display-only — all stored timestamps remain UTC (M23b).
 
 ## Activities
 
@@ -372,7 +383,8 @@ see Unit systems):
   beyond that (the year view). Every bucket in the range is present; days with
   no distance are `0.0`. An **empty** list means the period has no distance
   data at all (then `distance` is null too). Buckets follow UTC calendar days;
-  a user-localized boundary would belong to the (parked) timezone work.
+  localizing them to the user's display timezone (M23) is not done yet — the
+  client sends zone-aware period boundaries, but bucketing stays UTC.
 
 Errors: 422 `VALIDATION_ERROR` for a malformed or inverted range; 401
 unauthenticated.

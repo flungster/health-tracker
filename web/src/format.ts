@@ -70,28 +70,57 @@ export function formatPace(secondsPerUnit: number | null | undefined): string {
   return `${minutes}'${String(seconds).padStart(2, "0")}"`;
 }
 
-/** Local date key (YYYY-MM-DD) for grouping the feed by day. */
-export function dayKey(iso: string): string {
-  const date = new Date(iso);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+/** A display time zone: an IANA name (e.g. "Europe/Berlin") or null = the
+ *  browser's local zone (M23b). All date rendering goes through these helpers. */
+export type TimeZoneInput = string | null;
+
+function zoneOptions(timeZone: TimeZoneInput): Record<string, unknown> {
+  return timeZone !== null && timeZone.trim() !== "" ? { timeZone } : {};
 }
 
-/** Human label for a day key: Today, Yesterday, or the full date. */
-export function dayLabel(key: string): string {
-  const today = new Date();
-  const todayKey = dayKey(today.toISOString());
+/** The wall-clock calendar date (YYYY-MM-DD) of an instant in a zone.
+ *  "en-CA" formats dates as YYYY-MM-DD, which is exactly the key shape. */
+function zonedDateKey(instant: Date, timeZone: TimeZoneInput): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    ...zoneOptions(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** Date key (YYYY-MM-DD) for grouping the feed by day, in a zone. */
+export function dayKey(iso: string, timeZone: TimeZoneInput = null): string {
+  return zonedDateKey(new Date(iso), timeZone);
+}
+
+/** Human label for a day key: Today, Yesterday, or the full date.
+ *  "Today"/"Yesterday" are resolved in `timeZone` (M23b); `now` is injectable
+ *  for tests. */
+export function dayLabel(
+  key: string,
+  timeZone: TimeZoneInput = null,
+  now: Date = new Date(),
+): string {
+  const todayKey = zonedDateKey(now, timeZone);
   if (key === todayKey) {
     return "Today";
   }
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (key === dayKey(yesterday.toISOString())) {
+  // Yesterday = one calendar day before today's key — pure wall-clock math,
+  // so it is independent of the zone (and DST) by construction.
+  const [year, month, day] = todayKey.split("-").map(Number);
+  const yesterdayMs = Date.UTC(year, month - 1, day) - 86_400_000;
+  const yesterdayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(yesterdayMs));
+  if (key === yesterdayKey) {
     return "Yesterday";
   }
-  const [year, month, day] = key.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
+  const [labelYear, labelMonth, labelDay] = key.split("-").map(Number);
+  const date = new Date(labelYear, labelMonth - 1, labelDay);
   return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
@@ -100,18 +129,25 @@ export function dayLabel(key: string): string {
   });
 }
 
-export function formatActivityDate(iso: string): string {
+/** Calendar date (short style) of an instant, in a zone. */
+export function formatActivityDate(iso: string, timeZone: TimeZoneInput = null): string {
   const date = new Date(iso);
   return date.toLocaleDateString(undefined, {
+    ...zoneOptions(timeZone),
     month: "short",
     day: "numeric",
     year: "numeric",
   });
 }
 
-export function formatClock(iso: string): string {
+/** Wall-clock time (short style) of an instant, in a zone. */
+export function formatClock(iso: string, timeZone: TimeZoneInput = null): string {
   const date = new Date(iso);
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString(undefined, {
+    ...zoneOptions(timeZone),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** Elapsed mm:ss for chart axes, relative to a start timestamp. */

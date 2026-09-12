@@ -30,6 +30,7 @@ import {
   formatPace,
   paceSuffix,
 } from "../format";
+import { useTimezone } from "../timezone/context";
 import { useUnits } from "../units/context";
 
 export default function ActivityDetailPage() {
@@ -38,6 +39,7 @@ export default function ActivityDetailPage() {
   const activityId = id ?? "";
 
   const { units } = useUnits();
+  const { timeZone } = useTimezone();
 
   const { data: activity, isPending, isError, error } = useActivity(activityId);
   const { data: trackpointsData } = useTrackpoints(activityId);
@@ -160,7 +162,7 @@ export default function ActivityDetailPage() {
             )}
           </div>
           <p className="mt-1 text-sm text-ink-muted">
-            {formatActivityDate(activity.started_at)} at {formatClock(activity.started_at)}
+            {formatActivityDate(activity.started_at, timeZone)} at {formatClock(activity.started_at, timeZone)}
           </p>
           {activity.description !== null && activity.description !== "" && (
             <p className="mt-2 text-sm text-ink-muted">{activity.description}</p>

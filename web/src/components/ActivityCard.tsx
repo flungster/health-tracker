@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import type { ActivitySummaryView } from "../api/types";
 import { formatActivityDate, formatClock, formatDistance, formatDuration } from "../format";
+import { useTimezone } from "../timezone/context";
 import { useUnits } from "../units/context";
 import ProviderBadge from "./ProviderBadge";
 import SportBadge from "./SportBadge";
@@ -11,6 +12,7 @@ import { Card } from "./Ui";
 
 export default function ActivityCard({ activity }: { activity: ActivitySummaryView }) {
   const { units } = useUnits();
+  const { timeZone } = useTimezone();
   return (
     <Card className="px-5 py-4 transition-shadow hover:shadow-sm">
       <Link to={`/activities/${activity.id}`} className="block">
@@ -21,7 +23,8 @@ export default function ActivityCard({ activity }: { activity: ActivitySummaryVi
             {activity.name}
           </span>
           <span className="ml-auto shrink-0 text-xs text-ink-faint">
-            {formatActivityDate(activity.started_at)} · {formatClock(activity.started_at)}
+            {formatActivityDate(activity.started_at, timeZone)} ·{" "}
+            {formatClock(activity.started_at, timeZone)}
           </span>
         </div>
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-muted">

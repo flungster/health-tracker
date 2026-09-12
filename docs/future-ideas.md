@@ -96,24 +96,24 @@ doubles as "account menu" later if more personal actions appear.
 Trivial change; parked because it is cosmetic and not part of the current
 milestone scope.
 
-## User location + timezone (parked 2026-08-30)
+## User location (parked 2026-08-30; the timezone half shipped in M23)
 
-Let the user set a **location** (city/state and/or an IANA timezone, e.g.
-`Europe/Berlin`) in their profile, and render activity times **relative to that
-timezone** instead of the browser's local timezone.
+Let the user set a **location** (city/state and/or coordinates) in their
+profile. The sibling idea — an IANA **timezone** for display — is done: M23
+stored `user_profiles.timezone` (zoneinfo-validated) and the client now renders
+day-grouping, dates/clocks and dashboard period boundaries in that zone (null =
+browser local).
 
-- Today, all dates/times are stored UTC and the SPA renders them in the
-  *client's* local timezone (feed day-grouping "Today / Yesterday" uses the
-  client-local date of `started_at`). A user who travels or runs the homelab UI
-  from a different machine sees their day boundaries shift.
-- With a stored timezone, the API/UI could return per-user-localized dates (or
-  send `tz` to the client and localize in one place), making day-grouping,
-  start times, and any "today" logic stable for that user.
-- Fits naturally in `user_profiles` (a `timezone text NULL`, optionally a free-
-  form `location text`); validation against IANA names (the `tzdata` database —
-  Python's `zoneinfo`). Client-side, a small tz-aware date helper.
-- Also the prerequisite for user-localized weather (see "Weather along an
-  activity") and any future scheduled/reminder features.
+What remains: a free-form `location` column on the same profile, plus
+everything that would consume it —
+
+- user-localized weather (see "Weather along an activity") and any future
+  scheduled/reminder features need a *place*, not just a zone;
+- an optional location on the dashboard ("12 km run in Berlin") or weather
+  lookups by coordinate.
+
+Nothing to consume it yet, so it stays parked; the M23 profile surface (field +
+validation + context) is already there to extend.
 
 ## Cross-provider duplicate activity detection (parked 2026-08-30)
 

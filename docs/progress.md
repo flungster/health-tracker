@@ -46,6 +46,7 @@ to Done in the overview.
 | M22c | Activity images: web gallery on the detail page — thumbnails, add (drop or browse), enlarge lightbox, delete with confirm | Done | 2026-09-11 |
 | M22d | Activity images (user upload): docs + live check — completes the local-first half of M22 | Done | 2026-09-11 |
 | M23a | User timezone (I): `user_profiles.timezone` IANA name — profile view + PATCH with zoneinfo validation (`tzdata` dep for a consistent valid-name set) | Done | 2026-09-11 |
+| M23b | User timezone (II): client renders in the saved zone — tz-aware day/period boundaries + formatters, `useTimezone()` context (profile-synced), Profile "Time zone" card; completes M23 | Done | 2026-09-11 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -54,6 +55,62 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M23b — User timezone (II): the client renders in the saved zone (2026-09-11)
+
+Second of a two-part set completing M23: everything the user *sees* — day
+grouping, card/detail dates and clocks, dashboard period boundaries — now
+follows the profile's `timezone` (M23a), with null = the browser's local
+zone, exactly as before.
+
+### What landed
+- **`web/src/format.ts`** — `dayKey`, `dayLabel`, `formatActivityDate`,
+  `formatClock` take an optional IANA zone (default null = browser local). Day
+  keys come from `Intl.DateTimeFormat("en-CA")` (stable YYYY-MM-DD in the
+  zone); `dayLabel(key, tz, now?)` resolves Today/Yesterday *in the zone*
+  (yesterday = pure wall-clock arithmetic, DST-independent) with an injectable
+  `now` for tests.
+- **`web/src/periods.ts`** — `periodRange(period, now?, timeZone?)`. All
+  boundary math is pure wall-clock calendar arithmetic in the zone; instants
+  are derived at the end via `zonedMidnightUtcMs` — a DST-safe fixed-point
+  (≤4 passes) over the offset parsed from Intl's `timeZoneName: "shortOffset"`
+  ("GMT±H[:MM]"), so no hand-rolled offset tables. Week = Monday–Sunday of the
+  zone's calendar; month/year start on their first day there.
+- **`web/src/timezone/context.tsx`** — `TimezoneProvider` + `useTimezone()`
+  mirroring UnitsProvider: localStorage-seeded (`health-tracker.timezone`),
+  profile is the source of truth once it loads (a saved null = browser local
+  also wins over stale storage). Mounted in `main.tsx`.
+- **Wired call sites** — feed grouping (`ActivitiesPage`), feed card + detail
+  header dates/clocks, dashboard `periodRange`, connected-account "connected /
+  last synced" lines, profile "Member since".
+- **ProfilePage** — new *Time zone* card: IANA input with a `datalist` of 17
+  common zones, placeholder "(browser default)", independent save (own mutation
+  instance; empty clears to null). `timezone` added to `ProfileView` /
+  `ProfileUpdateInput`.
+
+### Tests (21 new web: format + periods + context)
+- `format.test.ts`: one instant keys to different calendar days in LA vs
+  Kiritimati; Today/Yesterday per zone with injected now; default = legacy
+  local behaviour.
+- `periods.test.ts`: named-zone day/week/month boundaries as exact UTC instants
+  (LA PDT, Kiritimati +14, Berlin CEST→CET across the 2026-10-25 switch —
+  including `zonedMidnightUtcMs` landing on Oct 31T23:00Z, not T00:00Z); tz=null
+  unchanged. All pre-existing local-zone tests kept as the null-regression set.
+- `timezone/context.test.tsx`: storage seed, `setTimeZone` persistence (null →
+  empty string), profile-wins-over-stale-storage (named and null).
+
+### Live check (:9090 — api + web rebuilt)
+PATCH profile `{"timezone":"Asia/Tokyo"}` → saved + echoed; unknown zone
+`Not/AZone` → `422 VALIDATION_ERROR`; null clears. Fresh bundle carries the
+*Time zone* card, datalist zones and storage key; summary endpoint accepts a
+tz-computed JST day boundary (200).
+
+**Gates:** `make lint` + `make test` green (**313 API / 56 web**).
+
+### M23 status
+"User location + timezone" (timezone half) is complete end-to-end: stored,
+validated, and rendered. **Location stays parked** — nothing to consume it yet;
+see `docs/future-ideas.md`.
 
 ## M23a — User timezone (I): stored IANA name on the profile (2026-09-11)
 
