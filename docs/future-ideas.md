@@ -168,23 +168,15 @@ per-activity failures (report, continue). A per-user `POST /weather/backfill`
 activities" button on the dashboard would be the shape; pre-2021 activities
 need an explicit "no data" outcome rather than an error.
 
-## Weather along an activity (parked 2026-08-29)
+## ~~Weather along an activity~~ — shipped as M24 (2026-09-13)
 
-For each **outdoor** activity, show what the weather was like at the time and
-how it changed over the course of the activity:
+Opt-in per-activity weather from Open-Meteo (keyless, CC BY 4.0): start/end
+condition chips + a temperature-over-time curve for longer efforts, cached per
+activity (`activity_weather`), GPS-only activities. See `docs/progress.md`
+(M24a–M24c) and the *Weather* bullet in `docs/usage.md`; the remaining half —
+bulk backfill across a library — is parked above.
 
-- conditions during the activity (sunny / partly cloudy / overcast, rain)
-- humidity and dew point
-- apparent ("feels-like") temperature
-- **temperature over time** — the differentiator: the temperature traced
-  along the activity's duration, most useful for multi-hour efforts (long
-  runs, long rides). For sub-hour activities, start + end conditions are
-  enough.
-
-Indoor sports (strength, indoor rowing, yoga, …) are assumed
-climate-controlled and get nothing.
-
-### Feasibility: yes — researched 2026-08-29
+<details><summary>Original research (kept for the backfill idea)</summary>
 
 Open-Meteo (https://open-meteo.com) provides exactly this, with **no account
 and no API key for non-commercial use**:
@@ -221,3 +213,5 @@ and no API key for non-commercial use**:
   aligned to the activity's duration (recharts already draws HR this way).
 - Accuracy note: this is model/grid data (~9–13 km cells), not a station
   reading — an acceptable trade for this use.
+
+</details>

@@ -93,6 +93,14 @@ Clicking an activity opens its detail page:
   a dialog). Photos are stored on your server — they never leave it.
 - **Route map** — the GPS route on an OpenStreetMap map, shown only when the
   activity has GPS points.
+- **Weather** — what it was like out there, for activities with GPS (optional).
+  Click **Show weather** and the app fetches that day's conditions from
+  Open-Meteo (your data, on demand — nothing is fetched at import time) and
+  caches it: conditions at start and end (condition, temperature, feels-like,
+  humidity, dew point), plus a temperature-over-time curve for efforts of about
+  an hour and a half or more. Re-opening the page never re-fetches. Weather is
+  model/grid data (~10 km cells) for the activity's start point, not a station
+  reading — good to know when judging a hot day.
 - **Splits** — one table in your display unit system (per-kilometre or
   per-mile), each row showing split time, pace, and — only when recorded —
   average heart rate and cadence. (An activity shorter than a tenth of one unit

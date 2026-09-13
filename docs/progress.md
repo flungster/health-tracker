@@ -47,6 +47,8 @@ to Done in the overview.
 | M22d | Activity images (user upload): docs + live check — completes the local-first half of M22 | Done | 2026-09-11 |
 | M23a | User timezone (I): `user_profiles.timezone` IANA name — profile view + PATCH with zoneinfo validation (`tzdata` dep for a consistent valid-name set) | Done | 2026-09-11 |
 | M23b | User timezone (II): client renders in the saved zone — tz-aware day/period boundaries + formatters, `useTimezone()` context (profile-synced), Profile "Time zone" card; completes M23 | Done | 2026-09-11 |
+| M24a | Weather along an activity (I): db + API core — `activity_weather` cache (json snapshot), opt-in GET/POST weather routes, Open-Meteo client (keyless) with `WEATHER_ERROR` 502 | Done | 2026-09-13 |
+| M24b | Weather along an activity (II): web — opt-in "Show weather" card on the detail page: start/end condition chips + temperature-over-time curve (≥90 min), WMO labels, Open-Meteo attribution; completes M24 | Done | 2026-09-13 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -55,6 +57,94 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M24b — Weather along an activity (II): the opt-in weather card (2026-09-13)
+
+The UI half of M24: a **Weather** card on the activity detail page for
+GPS-only activities (after Route). Clicking **Show weather** is the only thing
+that ever touches Open-Meteo; after that, every page load reads the server-side
+cache (M24a) — no re-fetch.
+
+### What landed
+- **`web/src/api/types.ts` + `hooks.ts`** — `ActivityWeatherView` /
+  `WeatherPointView`; `useActivityWeather(activityId)` (the API's 404 becomes
+  a quiet `null` "not fetched yet" state; any other failure is a real error)
+  and `useFetchWeather(activityId)` (POST, invalidates the cache query).
+- **`web/src/components/WeatherCard.tsx`** — three states: not fetched (the
+  opt-in button + one-paragraph explanation), in flight (`Spinner` / "Fetching
+  weather…"), fetched (start + end **condition chips** — WMO label, rounded °C
+  temperature, feels-like, humidity %, dew point; nearest-hour points for each —
+  plus a **temperature-over-time** recharts line when the effort lasts ≥90 min;
+  sub-90-min efforts get chips only, per the research sketch). Nulls from
+  upstream render as em dashes like everything else; times use `formatClock` in
+  the user's display timezone (M23). Attribution footer on every snapshot:
+  "Weather data by Open-Meteo (CC BY 4.0), model/grid data for the start point
+  · fetched <time>" — required by Open-Meteo's CC BY 4.0 terms.
+- **Wired** in `ActivityDetailPage` (gated on the existing client-side
+  `hasGps`).
+
+### Tests (6 new web: 5 WeatherCard + label map)
+`weatherLabel` WMO mapping incl. unknown-code and null fallbacks; the opt-in
+click calls the fetch mutation; start/end chips render nearest-hour data with
+rounded temps and an em dash for a missing feels-like; the ≥90-min curve is
+present only when it earns its place; upstream failures surface with a retry.
+
+### Gates + live
+`make lint && make test` green (**327 API / 62 web**). Live on :9090 (api +
+web rebuilt): import sample GPX → `GET` 404 before fetch → **real Open-Meteo
+fetch** (24 hourly points at the fixture's start point 48.85/2.35, real values)
+→ `GET` serves the cached row (same id). Bundle carries "Show weather" /
+"Weather data by". Smoke activity soft-deleted after the check.
+
+### M24 status
+"Weather along an activity" is complete end-to-end (shipped entry in
+`future-ideas.md`, original research kept inside it for the backfill idea). The
+**library-wide backfill** half is parked in `future-ideas.md` with its own
+feasibility note (ERA5 for pre-2021, incremental via the cache).
+
+## M24a — Weather along an activity (I): db + API core for opt-in weather (2026-09-13)
+
+First of a two-part set unparking "Weather along an activity": the
+server-side half — storage for per-activity weather snapshots and the opt-in
+fetch/cache endpoints. Strictly on demand: nothing fetches at import time, and
+a successful lookup is cached forever (re-opened pages never call upstream), so
+the app stays fully functional offline.
+
+### What landed
+- **Migration `20260911000003_activity_weather.sql`** — `activity_weather`:
+  public uuid, FK CASCADE to the activity (at most one **live** row per
+  activity via a soft-delete-aware partial unique index), `lat`/`lon` (CHECK
+  WGS84 bounds) of the point measured for, `fetched_at`, and the hourly
+  snapshot in a **standard-SQL `json` column** (`json_typeof(data) = 'array'`)
+  — a display-only blob the client reads whole, never queried into. Verified up
+  AND down on the live db. Chosen over an hourly child table after discussion:
+  nothing ever slices this data server-side, so a third DAO buys no queries.
+- **`app/weather/client.py`** — `OpenMeteoClient`: one keyless GET to the
+  Historical Forecast API (UTC hours, five variables), injectable transport for
+  tests; returns typed `WeatherHourlyData` with upstream nulls preserved as
+  None. Every failure path (transport, non-200, malformed body, length mismatch)
+  raises the new **`WeatherUpstreamError`** (502 `WEATHER_ERROR`) — a failed
+  lookup stores nothing, so retrying starts clean.
+- **Service** `ActivityWeatherService` — fetch-or-cache: reuse the live row (no
+  upstream call); else resolve the activity's **first GPS trackpoint**
+  (`ActivityTrackpointDao.first_geographic_point`), fetch the UTC day range of
+  `started_at..ended_at`, store. No-GPS activity → 422; someone else's
+  activity → 404 (ownership rule, like images). No update/delete path: the
+  snapshot lives until its activity does.
+- **Routes** — `GET /activities/{id}/weather` (404 when not yet fetched),
+  `POST .../weather` (fetch-or-cache, idempotent); DI builds a per-request
+  client (`get_open_meteo_client`, closed after the response) alongside the
+  service. Base URL is a setting (`OPEN_METEO_BASE_URL`).
+
+### Tests (14 new API)
+9 client unit tests on a mock transport (parsing, null preservation, malformed
+bodies incl. length mismatch, network + upstream errors) and 5 API integration
+tests with the client overridden (404-before-fetch; fetch → snapshot at the
+fixture's start point with nulls surviving; **cache reuse proven by call-counting**
+the fake on re-POST and GET; no-GPS rowing fixture → 422 with zero upstream
+calls; other user's activity invisible as 404).
+
+**Gates:** `make lint` + `make test` green (**327 API / 56 web**).
 
 ## M23b — User timezone (II): the client renders in the saved zone (2026-09-11)
 

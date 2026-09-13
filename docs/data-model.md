@@ -53,6 +53,7 @@ users 1───┬───1 user_profiles
                                  ├───* activity_splits
                                 ├───0..1+ activity_zone_snapshots ──> zone_sources (reference)
                                 ├───* activity_images ──> image_sources (reference)
+                               ├───0..1 activity_weather        (M24; at most one live row)
                                 ├───1 running_activity
                                ├───1 cycling_activity
                                ├───1 rowing_activity
@@ -322,6 +323,25 @@ disk).
 | `bytes` | `int` CHECK > 0 | Size of the stored file. |
 | audit | | Partial index on `activity_id` where live (list queries). |
 
+### `activity_weather`
+
+Cached per-activity weather snapshots (M24): at most **one live row** per
+activity (partial unique index on `activity_id` where not deleted). Written by
+the opt-in weather fetch (`POST /activities/{id}/weather`); re-opened pages
+read the row instead of calling upstream again. Display-only — nothing else in
+the app reads it, and there is no update or delete path: the snapshot lives
+until its activity does (FK cascade).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigint` PK (identity) | |
+| `uuid` | `uuid` UNIQUE | Public identifier exposed by the API. |
+| `activity_id` | `uuid` FK → activities (uuid) CASCADE UNIQUE-where-live | The activity the snapshot covers. |
+| `lat` / `lon` | `double precision` CHECK within WGS84 bounds | The point measured for — the activity's first GPS trackpoint. |
+| `fetched_at` | `timestamptz` DEFAULT now() | When the upstream fetch happened (the row is immutable, so it equals `created_at`; kept explicit because it names the data's age for display). |
+| `data` | `json` CHECK array-of-objects | The hourly snapshot: one object per UTC hour with `time`, `temperature_c`, `apparent_temperature_c`, `relative_humidity_pct`, `dew_point_c` (WMO) `weather_code`. Standard-SQL JSON — a display-only blob the client reads whole, never queried into. Missing upstream values stay null inside it. |
+| audit | | Partial unique index on `activity_id` where live (at most one snapshot per activity). |
+
 ### `zone_sources`
 
 Reference table of the reference a heart-rate zone snapshot was computed from.
@@ -428,6 +448,7 @@ time of writing.)
 | `20260905000001_imperial_units_setting.sql` | Per-user unit-system setting (M14a): `user_profiles` gains nullable `imperial_units_enabled_at timestamptz` (NULL = metric default; set = imperial since that instant). No activity rows touched — storage stays SI, conversion is view-layer (M14b). |
 | `20260911000001_activity_images.sql` | Activity images (M22b): `image_sources` reference table (seeded with `uploaded`) + `activity_images` (photos per activity; bytes live on disk under `uploads/<user_id>/images/`, row is authoritative). |
 | `20260911000002_user_timezone.sql` | Display timezone (M23a): `user_profiles.timezone text NULL` — IANA zone name for rendering dates, NULL = browser local. Display-only; no other schema touched. |
+| `20260911000003_activity_weather.sql` | Cached activity weather (M24a): `activity_weather` — at most one live snapshot per activity (`lat`/`lon` of the point measured for, `fetched_at`, hourly series in a standard-SQL `json` column); FK CASCADE to the activity. |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

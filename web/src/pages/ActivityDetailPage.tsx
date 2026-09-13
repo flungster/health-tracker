@@ -11,6 +11,7 @@ import RouteMap from "../components/RouteMap";
 import SportBadge from "../components/SportBadge";
 import SplitsTable from "../components/SplitsTable";
 import StatGrid from "../components/StatGrid";
+import WeatherCard from "../components/WeatherCard";
 import { Card, ErrorNote, Spinner } from "../components/Ui";
 import {
   CyclingDetail,
@@ -189,6 +190,13 @@ export default function ActivityDetailPage() {
         <Card className="p-5">
           <h2 className="mb-4 text-base font-semibold text-ink">Route</h2>
           <RouteMap trackpoints={trackpoints} />
+        </Card>
+      )}
+
+      {hasGps && (
+        <Card className="p-5">
+          <h2 className="mb-4 text-base font-semibold text-ink">Weather</h2>
+          <WeatherCard activityId={activityId} startedAt={activity.started_at} endedAt={activity.ended_at} />
         </Card>
       )}
 

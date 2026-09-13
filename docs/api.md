@@ -561,6 +561,44 @@ Image view:
 }
 ```
 
+### Weather (M24)
+
+Opt-in weather for an activity, fetched from the Open-Meteo Historical
+Forecast API (keyless; data is CC BY 4.0 — the UI carries the attribution).
+Strictly on demand: nothing fetches at import time, and a successful lookup is
+**cached server-side per activity** — re-opening the page never calls upstream.
+Only activities with GPS points can be weathered (the snapshot is measured for
+the activity's first trackpoint).
+
+| Method & path | What it does |
+|---|---|
+| `POST /activities/{id}/weather` | Fetch the weather if not cached yet, otherwise return the cache. Response `200`: the view below. `422 VALIDATION_ERROR` when the activity has no GPS points; `502 WEATHER_ERROR` when the upstream lookup fails (nothing is stored then, so a retry starts clean). |
+| `GET /activities/{id}/weather` | The cached snapshot, or `404 NOT_FOUND` when it has not been fetched yet (the "Show weather" state). |
+
+Weather view:
+
+```json
+{
+  "id": "…uuid…",               // the snapshot row's public uuid (stable across re-fetches)
+  "lat": 48.85,                 // the point measured for (the first GPS trackpoint)
+  "lon": 2.35,
+  "fetched_at": "2026-09-13T08:05:00Z",
+  "points": [                   // one entry per UTC hour across the activity's day range
+    {
+      "time": "2026-09-13T08:00:00Z",
+      "temperature_c": 21.3,             // null when the upstream value is missing
+      "apparent_temperature_c": 20.9,    // "feels-like"
+      "relative_humidity_pct": 54.0,
+      "dew_point_c": 12.1,
+      "weather_code": 3                  // WMO interpretation code (client maps to a label)
+    }
+  ]
+}
+```
+
+All times are UTC ISO 8601; the client renders them in the user's display
+timezone (M23). Values that are missing upstream stay `null` end to end.
+
 ## Sports
 
 ### `GET /sports`

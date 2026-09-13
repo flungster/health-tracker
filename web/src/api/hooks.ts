@@ -13,6 +13,7 @@ import type {
   ActivityImageView,
   ActivityImagesView,
   ActivityPeriodSummaryView,
+  ActivityWeatherView,
   ClientConfigView,
   ConnectUrlView,
   ProfileView,
@@ -114,6 +115,41 @@ export function useDeleteImage(activityId: string) {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["activity-images", activityId] });
+    },
+  });
+}
+
+/** The cached weather of an activity; `null` = not fetched yet (the API's 404).
+ *  Any other failure surfaces as a real error. */
+export function useActivityWeather(activityId: string) {
+  return useQuery({
+    queryKey: ["activity-weather", activityId],
+    enabled: activityId !== "",
+    queryFn: async () => {
+      try {
+        return await apiRequest<ActivityWeatherView>(`/api/v1/activities/${activityId}/weather`, {
+          method: "GET",
+        });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null; // "Show weather" state, not an error condition.
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+/** Opt-in fetch (M24): reuses the cached snapshot server-side when present. */
+export function useFetchWeather(activityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiRequest<ActivityWeatherView>(`/api/v1/activities/${activityId}/weather`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["activity-weather", activityId] });
     },
   });
 }

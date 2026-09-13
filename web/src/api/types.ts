@@ -191,6 +191,26 @@ export type ActivityImagesView = {
   items: ActivityImageView[]; // upload order
 };
 
+/** One hour of a cached weather snapshot (M24). Nulls survive from upstream —
+ *  the UI shows an em dash for a missing field. */
+export type WeatherPointView = {
+  time: string; // ISO 8601 UTC hour, e.g. "2026-09-11T08:00:00Z"
+  temperature_c: number | null;
+  apparent_temperature_c: number | null; // "feels-like"
+  relative_humidity_pct: number | null;
+  dew_point_c: number | null;
+  weather_code: number | null; // WMO code (see weatherLabel)
+};
+
+/** A cached Open-Meteo snapshot for one activity, measured at `lat`/`lon`. */
+export type ActivityWeatherView = {
+  id: string; // public uuid of the snapshot row
+  lat: number;
+  lon: number;
+  fetched_at: string; // ISO 8601 UTC — when the upstream fetch happened
+  points: WeatherPointView[]; // one per hour, UTC
+};
+
 export type SportTypeView = {
   value: string;
   description: string;
