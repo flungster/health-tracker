@@ -30,6 +30,31 @@ class ActivityTrackpointDao(IntIdDao[ActivityTrackpoint]):
         )
         return list(self.session.scalars(statement).unique().all())
 
+    def first_geographic_point(self, activity_id: UUID) -> tuple[float, float] | None:
+        """The (lat, lon) of the first sample that carries coordinates.
+
+        None when the activity has no GPS at all (e.g. an indoor rower):
+        such activities cannot be weathered. Used to resolve the point a
+        weather snapshot is measured for (M24).
+        """
+        statement = (
+            select(ActivityTrackpoint.lat, ActivityTrackpoint.lon)
+            .where(
+                ActivityTrackpoint.activity_id == activity_id,
+                ActivityTrackpoint.lat.is_not(None),
+                ActivityTrackpoint.lon.is_not(None),
+            )
+            .order_by(ActivityTrackpoint.seq)
+            .limit(1)
+        )
+        row = self.session.execute(statement).first()
+        if row is None:
+            return None
+        lat, lon = row[0], row[1]
+        if lat is None or lon is None:  # unreachable given the WHERE clause; mypy needs it
+            return None
+        return (lat, lon)
+
     def zone_seconds_for(self, activity_id: UUID, max_heart_rate: int) -> HrZoneStats | None:
         """Seconds spent in each HR zone, relative to ``max_heart_rate``.
 

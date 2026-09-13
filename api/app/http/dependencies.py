@@ -5,6 +5,8 @@ request-scoped unit of work (and, for the import service, to the settings),
 and keeps route handlers free of construction code.
 """
 
+from collections.abc import Iterator
+
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.dao.activity_image_dao import ActivityImageDao
 from app.dao.activity_split_dao import ActivitySplitDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_type_dao import ActivityTypeDao
+from app.dao.activity_weather_dao import ActivityWeatherDao
 from app.dao.activity_zone_snapshot_dao import ActivityZoneSnapshotDao
 from app.dao.provider_account_dao import ProviderAccountDao
 from app.dao.provider_credentials_dao import ProviderCredentialDao
@@ -42,6 +45,9 @@ from app.services.activity_image_service import (
 )
 from app.services.activity_service import ActivityService
 from app.services.activity_stats import ActivityStatistics
+from app.services.activity_weather_service import (
+    ActivityWeatherService,
+)
 from app.services.auth_service import AuthService
 from app.services.import_service import ImportService
 from app.services.provider_config_service import ProviderConfigService
@@ -49,6 +55,7 @@ from app.services.provider_service import ProviderService
 from app.services.provider_sync_service import ProviderSyncService
 from app.services.sport_service import SportService
 from app.services.user_service import UserService
+from app.weather.client import OpenMeteoClient
 
 
 def get_password_service() -> PasswordService:
@@ -100,6 +107,32 @@ def get_activity_image_service(
         image_dao=ActivityImageDao(session),
         activity_dao=ActivityDao(session),
         settings=settings,
+    )
+
+
+def get_open_meteo_client(
+    settings: Settings = Depends(get_settings),
+) -> Iterator[OpenMeteoClient]:
+    """One Open-Meteo client per request (closed when the response is done)."""
+    client = OpenMeteoClient(base_url=settings.open_meteo_base_url)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+def get_activity_weather_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+    client: OpenMeteoClient = Depends(get_open_meteo_client),
+) -> ActivityWeatherService:
+    """ActivityWeatherService bound to the request unit of work and client."""
+    session: Session = unit_of_work.session
+    return ActivityWeatherService(
+        unit_of_work,
+        weather_dao=ActivityWeatherDao(session),
+        activity_dao=ActivityDao(session),
+        trackpoint_dao=ActivityTrackpointDao(session),
+        client=client,
     )
 
 

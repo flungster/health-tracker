@@ -147,6 +147,27 @@ dedup and no detection — both rows are kept silently.
   2026-09-09) — exact duplicates within a single source, with an overwrite
   option; this entry stays about cross-provider heuristic matching.
 
+## Weather backfill across a user's library (parked 2026-09-13)
+
+Companion to "Weather along an activity" (shipped as M24): fetch snapshots for
+**all** of the user's outdoor activities in one go, instead of waiting until
+each detail page is opened. Parked deliberately — bulk-fetching a library the
+user may never look at contradicts M24's strictly-on-demand, offline-capable
+spirit; it becomes interesting once the user actually wants weather on many old
+activities.
+
+Feasibility (verified while scoping M24): the same Open-Meteo Historical
+Forecast API covers hourly data back to ~2021 (ERA5 archive, ≈25 km cells,
+covers 1940+ for deep history), keyless at a 10k calls/day rate limit —
+thousands of activities backfill in a day or two. Everything M24 built is
+reusable: the client, `fetch_or_cached` per activity (a backfill loop just
+calls it and skips cached rows, which also makes the run **incremental and
+resumable**), the 422 for no-GPS activities (skip), and `WEATHER_ERROR`
+per-activity failures (report, continue). A per-user `POST /weather/backfill`
+(or a batch endpoint with progress) plus a "Fetch weather for all my
+activities" button on the dashboard would be the shape; pre-2021 activities
+need an explicit "no data" outcome rather than an error.
+
 ## Weather along an activity (parked 2026-08-29)
 
 For each **outdoor** activity, show what the weather was like at the time and

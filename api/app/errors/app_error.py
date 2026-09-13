@@ -84,6 +84,18 @@ class ProviderUpstreamError(AppError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class WeatherUpstreamError(AppError):
+    """The Open-Meteo weather lookup failed (HTTP 502).
+
+    Raised by the weather client for network failures and upstream errors.
+    Weather is strictly opt-in display data, so a failure only means "no
+    weather on this page" — the rest of the app is unaffected.
+    """
+
+    status_code = 502
+    code = "WEATHER_ERROR"
+
+
 class ActivityImportError(AppError):
     """An uploaded activity file could not be read (HTTP 422).
 

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     uploads_dir: str = "/data/uploads"
     max_upload_mb: int = 50
+    # Base URL of the Open-Meteo Historical Forecast API (opt-in weather lookups,
+    # M24). Non-commercial use is free and keyless; attribution required (CC BY 4.0).
+    open_meteo_base_url: str = "https://historical-forecast-api.open-meteo.com"
     # Maximum trackpoints in one imported file; larger files are rejected so
     # a single upload cannot exhaust memory (or the trackpoints endpoint).
     max_trackpoints: int = 100_000
