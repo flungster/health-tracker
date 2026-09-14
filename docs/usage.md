@@ -186,7 +186,9 @@ boundaries are percent of that max HR:
 
 ## Profile
 
-The **Profile** page has six parts:
+Your personal settings live on the **Profile** page — click your name in the top
+right of the header to get there (it highlights while you're on it). The page has
+six parts:
 
 - **Account** — your name, email, and join date.
 - **Units of measurement** — choose metric or imperial for all displayed

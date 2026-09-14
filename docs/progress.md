@@ -52,6 +52,7 @@ to Done in the overview.
 | M25a | Per-user theme (I): db + API core — `ui_themes` reference table, `user_profiles.theme`, profile view/PATCH (light/dark/system; NULL = app default light) | Done | 2026-09-13 |
 | M25b | Per-user theme (II): web — semantic tokens redefined under `.dark` on `<html>` (pre-paint script), `ThemeProvider` with live "system" resolution, Profile Theme card, theme-aware charts + CARTO dark map tiles; completes M25 | Done | 2026-09-13 |
 | M26 | Weather fixes: chart spans the activity's own hours (not its whole day) + temperatures follow the caller's unit system at read time | Done | 2026-09-14 |
+| M27 | Header: the user's name is now the Profile entry point (standalone nav item dropped) — unparks a parked UX idea | Done | 2026-09-14 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -60,6 +61,29 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M27 — Header: the user's name is the Profile entry point (2026-09-14)
+
+Small unparked UX idea: the profile is personal, so *who you are* should be
+the way in — not a fourth generic nav item.
+
+### What landed
+- **`web/src/components/Layout.tsx`** — the standalone **Profile** nav link is
+  gone; `{user.first_name}` (top right, next to Sign out) is now a `NavLink`
+  to `/profile`: muted by default, dark on hover (the affordance), and active
+  styling while you're on the page. It is also no longer hidden on small
+  screens — it was previously `hidden sm:inline` as a decorative label, and now
+  that it is the *only* profile entry point, hiding it would lock mobile users
+  out of their settings.
+
+### Tests (3 new web)
+`Layout.test.tsx` renders the header in a `MemoryRouter` with mocked auth: the
+name links to `/profile`, no separate "Profile" link exists, and the other nav
+items (Activities / Upload / Server settings) are untouched.
+
+**Gates:** `make lint && make test` green (**332 API / 76 web**). Live on :9090:
+the header name is an anchor to `/profile` in the served bundle; no "Profile"
+nav item.
 
 ## M26 — Weather fixes: activity-window chart + display-unit temperatures (2026-09-14)
 

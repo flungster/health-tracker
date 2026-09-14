@@ -73,16 +73,12 @@ photos and store them locally (provenance `strava` — the value to add to
   activities); opt-in on demand like weather, or at sync time — decide when
   scheduled.
 
-## Reach profile settings by clicking the user name (parked 2026-08-30)
+## ~~Reach profile settings by clicking the user name~~ — shipped as M27 (2026-09-14)
 
-The nav bar shows the signed-in user's first name (`web/src/components/
-Layout.tsx`) *and* a standalone **Profile** nav link. The profile is personal,
-so the name itself should be the entry point: drop the **Profile** nav item and
-make `{user.first_name}` a link to `/profile` (with hover affordance). The name
-doubles as "account menu" later if more personal actions appear.
-
-Trivial change; parked because it is cosmetic and not part of the current
-milestone scope.
+The **Profile** nav item is gone; the user's name in the header (right side,
+always visible now) *is* the link to `/profile`, with hover and active affordance.
+It doubles as "account menu" later if more personal actions appear (see the live
+stack's header or `web/src/components/Layout.tsx`).
 
 ## User location (parked 2026-08-30; the timezone half shipped in M23)
 

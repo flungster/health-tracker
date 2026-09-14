@@ -32,18 +32,22 @@ export default function Layout() {
             <NavLink to="/upload" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
               Upload
             </NavLink>
-            <NavLink to="/profile" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
-              Profile
-            </NavLink>
             <NavLink to="/settings" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : linkIdle}`}>
               Server settings
             </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             {user !== null && (
-              <span className="hidden text-sm text-ink-muted sm:inline">
+              // The name is the profile's entry point: personal settings live
+              // behind who you are, so there is no separate Profile nav item.
+              <NavLink
+                to="/profile"
+                className={({ isActive }) =>
+                  `text-sm transition-colors ${isActive ? "font-medium text-accent-dark" : "text-ink-muted hover:text-ink"}`
+                }
+              >
                 {user.first_name}
-              </span>
+              </NavLink>
             )}
             <button
               type="button"
