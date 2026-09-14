@@ -135,6 +135,20 @@ Leave it blank to use your device's local time — that is the default. Times
 are stored as UTC instants and converted at render time, so changing your zone
 never rewrites any data: it only changes which local calendar the app shows.
 
+## Theme
+
+The **Theme** card on the **Profile** page sets how the app looks:
+
+- **Light** — the default.
+- **Dark** — a dark stone palette with the same teal accent; charts, tooltips
+  and the route map (which switches to a dark basemap) follow along.
+- **System** — follows your device's light/dark setting, and keeps following
+  it: flip the OS while the app is open and it changes without a reload.
+
+The choice applies immediately (no wrong-theme flash on the next load — it is
+remembered on this device and re-applied before the page paints) and to every
+page. Display-only: it changes nothing about your stored data.
+
 ## Heart-rate zones
 
 Zones are personal: health-tracker computes them against a **zone reference**

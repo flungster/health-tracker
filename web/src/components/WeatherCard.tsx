@@ -9,6 +9,8 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { useActivityWeather, useFetchWeather } from "../api/hooks";
 import type { ActivityWeatherView, WeatherPointView } from "../api/types";
 import { clockFromSeconds, formatClock } from "../format";
+import { chartPalette, tooltipStyle } from "../theme/chartColors";
+import { useTheme } from "../theme/context";
 import { useTimezone } from "../timezone/context";
 import { ErrorNote, Spinner } from "./Ui";
 
@@ -91,6 +93,7 @@ function ConditionChip({ label, point }: ConditionChipProps) {
 
 /** Temperature over the course of the activity (hours, user's timezone). */
 function TemperatureChart({ weather, startedAt }: { weather: ActivityWeatherView; startedAt: string }) {
+  const palette = chartPalette(useTheme().dark);
   const start = new Date(startedAt).getTime();
   const data = weather.points.map((point) => ({
     time: clockFromSeconds(Math.max(0, Math.round((new Date(point.time).getTime() - start) / 1000))),
@@ -101,16 +104,16 @@ function TemperatureChart({ weather, startedAt }: { weather: ActivityWeatherView
       <p className="mb-2 text-sm font-medium text-ink-muted">Temperature over the activity</p>
       <ResponsiveContainer>
         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
-          <XAxis dataKey="time" tick={{ fontSize: 11, fill: "#6f6d68" }} />
-          <YAxis tick={{ fontSize: 11, fill: "#6f6d68" }} domain={["dataMin - 2", "dataMax + 2"]} />
+          <XAxis dataKey="time" tick={{ fontSize: 11, fill: palette.tick }} />
+          <YAxis tick={{ fontSize: 11, fill: palette.tick }} domain={["dataMin - 2", "dataMax + 2"]} />
           <Tooltip
-            contentStyle={{ borderRadius: 8, border: "1px solid #e3e1dc", fontSize: 12 }}
+            contentStyle={{ ...tooltipStyle(palette) }}
             formatter={(value) => [`${value}°C`, "Temperature"]}
           />
           <Line
             type="monotone"
             dataKey="temperature"
-            stroke="#2f6f6a"
+            stroke={palette.accent}
             strokeWidth={2}
             dot={false}
             isAnimationActive={false}

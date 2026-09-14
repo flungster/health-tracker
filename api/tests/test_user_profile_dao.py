@@ -44,6 +44,7 @@ def _empty_settings(**overrides: Any) -> dict[str, Any]:
         "custom_zone_4_top_bpm": None,
         "imperial_units_enabled_at": None,
         "timezone": None,
+        "theme": None,
     }
     settings.update(overrides)
     return settings
@@ -73,6 +74,29 @@ def test_imperial_units_timestamp_round_trips(engine: Engine, register_user: Any
         session.commit()
 
     assert cleared.imperial_units_enabled_at is None  # deliberate clear
+
+
+def test_theme_round_trips(engine: Engine, register_user: Any) -> None:
+    """A stored theme persists; clearing it returns the column to NULL (the default)."""
+    user_id = UUID(str(register_user()["user"]["id"]))
+
+    with _direct_session(engine) as session:
+        dao = UserProfileDao(session)
+
+        profile = dao.apply_health_settings(user_id, **_empty_settings(theme="dark"))
+        session.commit()
+
+        read_back = dao.get(user_id)
+        assert read_back is not None  # the row was created by this write
+        assert profile.theme == "dark"
+        assert read_back.theme == "dark"
+
+    with _direct_session(engine) as session:
+        dao = UserProfileDao(session)
+        cleared = dao.apply_health_settings(user_id, **_empty_settings())
+        session.commit()
+
+    assert cleared.theme is None  # deliberate clear
 
 
 def test_omitted_profile_keeps_metric_default(engine: Engine, register_user: Any) -> None:

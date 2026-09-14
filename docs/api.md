@@ -193,7 +193,8 @@ currently in effect (computed from them).
   "effective_max_heart_rate": 178,
   "age": 42,
   "units_system": "metric",
-  "timezone": null
+  "timezone": null,
+  "theme": "light"
 }
 ```
 
@@ -220,6 +221,11 @@ this system at read time (M14b).
 dates, times and day boundaries in the client — or `null`, which means "use
 the browser's local timezone". It is display-only: stored timestamps remain
 UTC instants; the client converts them at render time (M23b).
+
+`theme` is the selected UI theme — `"light"`, `"dark"` or `"system"` (follow
+the OS color scheme, resolved in the browser). Like `units_system` it is the
+**effective** choice and never null: a user who has not picked one gets the
+app default, `"light"` (M25b). Display-only.
 
 ### `PATCH /users/me/profile`
 
@@ -250,6 +256,12 @@ when?"; activity values are converted to imperial at read time (M14b).
 or `null` to clear it back to the browser's local timezone (an omitted field
 keeps the current value). An unknown name is rejected with `422
 VALIDATION_ERROR`. Display-only — all stored timestamps remain UTC (M23b).
+
+`theme` sets the UI theme: `"light"`, `"dark"` or `"system"` (an omitted
+field keeps the current choice). `null` clears back to the app default, which
+the view renders as `"light"`. Any other value is rejected with `422
+VALIDATION_ERROR` (the closed set comes from the seeded `ui_themes` reference
+table; M25b).
 
 ## Activities
 

@@ -71,6 +71,7 @@ class UserMapper:
             age=(reference.age if reference is not None else None),
             units_system=UserMapper.units_system_for(profile),
             timezone=profile.timezone,
+            theme=(profile.theme if profile.theme is not None else "light"),
         )
 
     @staticmethod
@@ -89,4 +90,5 @@ class UserMapper:
             age=None,
             units_system="metric",  # no profile row -> the default system
             timezone=None,  # no profile row -> browser-local display
+            theme="light",  # no profile row -> the app default theme
         )

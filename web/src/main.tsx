@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { ThemeProvider } from "./theme/context";
 import { TimezoneProvider } from "./timezone/context";
 import { UnitsProvider } from "./units/context";
 import "./index.css";
@@ -28,13 +29,15 @@ createRoot(container).render(
   <StrictMode>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <UnitsProvider>
-            <TimezoneProvider>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
-            </TimezoneProvider>
-          </UnitsProvider>
+          <ThemeProvider>
+            <UnitsProvider>
+              <TimezoneProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </TimezoneProvider>
+            </UnitsProvider>
+          </ThemeProvider>
         </AuthProvider>
       </QueryClientProvider>
     </StrictMode>,

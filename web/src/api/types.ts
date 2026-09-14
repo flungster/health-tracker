@@ -32,7 +32,13 @@ export type ProfileView = {
 
   /** Display time zone (IANA name) or null = the browser's local timezone. */
   timezone: string | null;
+
+  /** Selected UI theme (never null — a stored NULL renders as the app default). */
+  theme: Theme;
 };
+
+/** The UI themes a user can select (M25b); "system" follows the OS scheme. */
+export type Theme = "light" | "dark" | "system";
 
 /** The display unit system a response's unit-bearing values are expressed in. */
 export type Units = "metric" | "imperial";

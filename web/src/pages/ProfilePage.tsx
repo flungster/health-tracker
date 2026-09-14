@@ -4,12 +4,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useProfile, useUpdateProfile, useUpdateUser } from "../api/hooks";
-import type { ProfileView, Units } from "../api/types";
+import type { ProfileView, Theme, Units } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import ConnectedAccounts from "../components/ConnectedAccounts";
 import { Card, ErrorNote, Spinner } from "../components/Ui";
 import { inputClass, labelClass } from "../components/AuthShell";
 import { capitalize, formatActivityDate } from "../format";
+import { useTheme } from "../theme/context";
 import { useTimezone } from "../timezone/context";
 import { useUnits } from "../units/context";
 
@@ -74,6 +75,45 @@ type TimezoneFieldProps = {
   error: string | null;
 };
 
+type ThemeFieldProps = {
+  active: Theme;
+  onChoose: (theme: Theme) => void;
+  isPending: boolean;
+  error: string | null;
+};
+
+/** Profile card for the UI theme (saved independently of the units toggle). */
+function ThemeField({ active, onChoose, isPending, error }: ThemeFieldProps) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-base font-semibold text-ink">Theme</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        How the app looks. “System” follows your device&apos;s light/dark setting and keeps
+        following it as it changes. Charts and the route map follow along.
+      </p>
+      <div className="mt-4 flex gap-2">
+        {(["light", "dark", "system"] as const).map((theme) => (
+          <button
+            key={theme}
+            type="button"
+            onClick={() => onChoose(theme)}
+            disabled={isPending}
+            className={
+              active === theme
+                ? "rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white"
+                : "rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
+            }
+          >
+            {capitalize(theme)}
+          </button>
+        ))}
+      </div>
+      {isPending && <p className="mt-2 text-sm text-accent-dark">Saving…</p>}
+      {error !== null && <ErrorNote message={error} />}
+    </Card>
+  );
+}
+
 /** Profile card for the display time zone (saved independently of the units toggle). */
 function TimezoneField({ draft, onDraftChange, onSave, isPending, error }: TimezoneFieldProps) {
   return (
@@ -116,9 +156,12 @@ export default function ProfilePage() {
   const unitsMutation = useUpdateProfile();
   // Separate instance again: the timezone save shares none of this mutation's state.
   const timezoneMutation = useUpdateProfile();
+  // Separate instance once more: the theme choice shares none of this mutation's state.
+  const themeMutation = useUpdateProfile();
   const userMutation = useUpdateUser();
   const { units, setUnits } = useUnits();
   const { timeZone: savedTimeZone, setTimeZone } = useTimezone();
+  const { theme, setTheme } = useTheme();
 
   // Server value wins once loaded; context pre-paints before it arrives.
   const activeUnits: Units = profile?.units_system ?? units;
@@ -132,6 +175,19 @@ export default function ProfilePage() {
     unitsMutation.mutate(
       { units_system: system },
       { onSuccess: (saved) => setUnits(saved.units_system) },
+    );
+  }
+
+  function chooseTheme(next: Theme) {
+    if (next === theme || themeMutation.isPending) {
+      return;
+    }
+    // The dark class flips immediately via the context (pre-paint parity); on
+    // success the stored choice is adopted and the profile re-syncs.
+    setTheme(next);
+    themeMutation.mutate(
+      { theme: next },
+      { onSuccess: (saved) => setTheme(saved.theme) },
     );
   }
   const [searchParams, setSearchParams] = useSearchParams();
@@ -329,6 +385,13 @@ export default function ProfilePage() {
         onSave={saveTimeZone}
         isPending={timezoneMutation.isPending}
         error={timezoneMutation.error?.message ?? null}
+      />
+
+      <ThemeField
+        active={theme}
+        onChoose={chooseTheme}
+        isPending={themeMutation.isPending}
+        error={themeMutation.error?.message ?? null}
       />
 
       <ConnectedAccounts />

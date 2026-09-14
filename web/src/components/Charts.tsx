@@ -15,6 +15,8 @@ import {
 
 import type { HrZoneView, TrackpointView, Units } from "../api/types";
 import { clockFromSeconds, formatDistance } from "../format";
+import { chartPalette, tooltipStyle } from "../theme/chartColors";
+import { useTheme } from "../theme/context";
 
 type HeartRateChartProps = {
   trackpoints: TrackpointView[];
@@ -22,6 +24,7 @@ type HeartRateChartProps = {
 };
 
 export function HeartRateChart({ trackpoints, startedAt }: HeartRateChartProps) {
+  const palette = chartPalette(useTheme().dark);
   const start = new Date(startedAt).getTime();
   const data = trackpoints
     .filter((point) => point.heart_rate_bpm !== null && point.recorded_at !== null)
@@ -42,20 +45,20 @@ export function HeartRateChart({ trackpoints, startedAt }: HeartRateChartProps) 
     <div className="h-64 w-full">
       <ResponsiveContainer>
         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
-          <CartesianGrid stroke="#e3e1dc" strokeDasharray="3 3" />
-          <XAxis dataKey="time" tick={{ fontSize: 11, fill: "#6f6d68" }} />
+          <CartesianGrid stroke={palette.grid} strokeDasharray="3 3" />
+          <XAxis dataKey="time" tick={{ fontSize: 11, fill: palette.tick }} />
           <YAxis
-            tick={{ fontSize: 11, fill: "#6f6d68" }}
+            tick={{ fontSize: 11, fill: palette.tick }}
             domain={["dataMin - 5", "dataMax + 5"]}
           />
           <Tooltip
-            contentStyle={{ borderRadius: 8, border: "1px solid #e3e1dc", fontSize: 12 }}
+            contentStyle={{ ...tooltipStyle(palette) }}
             formatter={(value) => [`${value} bpm`, "Heart rate"]}
           />
           <Line
             type="monotone"
             dataKey="bpm"
-            stroke="#2f6f6a"
+            stroke={palette.accent}
             strokeWidth={2}
             dot={false}
             isAnimationActive={false}
@@ -74,9 +77,8 @@ const ZONE_LABELS = [
   "Zone 5",
 ] as const;
 
-const ZONE_COLORS = ["#a8c4c1", "#7fa8a4", "#5d948f", "#3d7c76", "#2f6f6a"] as const;
-
 export function HrZonesChart({ zones }: { zones: HrZoneView }) {
+  const palette = chartPalette(useTheme().dark);
   const values = [
     zones.zone_1_seconds,
     zones.zone_2_seconds,
@@ -101,11 +103,11 @@ export function HrZonesChart({ zones }: { zones: HrZoneView }) {
     <div className="h-52 w-full">
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-          <CartesianGrid stroke="#e3e1dc" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6f6d68" }} />
-          <YAxis tick={{ fontSize: 11, fill: "#6f6d68" }} />
+          <CartesianGrid stroke={palette.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.tick }} />
+          <YAxis tick={{ fontSize: 11, fill: palette.tick }} />
           <Tooltip
-            contentStyle={{ borderRadius: 8, border: "1px solid #e3e1dc", fontSize: 12 }}
+            contentStyle={{ ...tooltipStyle(palette) }}
             formatter={(value, _name, item) => [
               `${value} s (${(item?.payload as { percent: number } | undefined)?.percent ?? 0}%)`,
               "Time",
@@ -113,7 +115,7 @@ export function HrZonesChart({ zones }: { zones: HrZoneView }) {
           />
           <Bar dataKey="seconds" radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {data.map((entry, index) => (
-              <Cell key={entry.label} fill={ZONE_COLORS[index]} />
+              <Cell key={entry.label} fill={palette.zoneColors[index]} />
             ))}
           </Bar>
         </BarChart>
@@ -140,6 +142,7 @@ function monthTick(iso: string): string {
 
 /** Distance over time for the dashboard (bars per day or month). */
 export function DistanceTrendChart({ points, units, granularity }: DistanceTrendChartProps) {
+  const palette = chartPalette(useTheme().dark);
   const data = points.map((point) => ({
     start: point.start,
     value: point.value,
@@ -149,12 +152,12 @@ export function DistanceTrendChart({ points, units, granularity }: DistanceTrend
     <div className="h-64 w-full">
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -16 }}>
-          <CartesianGrid stroke="#e3e1dc" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6f6d68" }} minTickGap={12} />
-          <YAxis tick={{ fontSize: 11, fill: "#6f6d68" }} />
+          <CartesianGrid stroke={palette.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.tick }} minTickGap={12} />
+          <YAxis tick={{ fontSize: 11, fill: palette.tick }} />
           <Tooltip
-            contentStyle={{ borderRadius: 8, border: "1px solid #e3e1dc", fontSize: 12 }}
-            cursor={{ fill: "#f5f4f1" }}
+            contentStyle={{ ...tooltipStyle(palette) }}
+            cursor={{ fill: palette.cursorFill }}
             labelFormatter={(label, items) => {
               const iso = (items?.[0]?.payload as { start: string } | undefined)?.start;
               if (iso === undefined) {
@@ -167,7 +170,7 @@ export function DistanceTrendChart({ points, units, granularity }: DistanceTrend
             }}
             formatter={(value) => [formatDistance(Number(value), units), "Distance"]}
           />
-          <Bar dataKey="value" fill="#2f6f6a" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="value" fill={palette.accent} radius={[4, 4, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>

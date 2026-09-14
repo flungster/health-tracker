@@ -23,6 +23,8 @@ class UserProfile(IntIdModel, TimestampMixin):
         units (NULL = metric, the default). A timestamp rather than a boolean:
         it answers both "is imperial on?" and "since when?". Display-only —
         activity data stays stored in SI units.
+      * ``theme`` — the selected UI theme (M25a); NULL = light, the app
+        default. Display-only; ``system`` is resolved client-side.
     """
 
     __tablename__ = "user_profiles"
@@ -45,6 +47,8 @@ class UserProfile(IntIdModel, TimestampMixin):
     )
     # IANA time-zone name for display (M23a); NULL = the browser's local zone.
     timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Selected UI theme (M25a); NULL = light, the app default.
+    theme: Mapped[str | None] = mapped_column(Text, ForeignKey("ui_themes.value"), nullable=True)
 
     def __repr__(self) -> str:
         return f"UserProfile(user_id={self.user_id})"

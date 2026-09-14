@@ -43,28 +43,16 @@ Feasibility sketch — open questions to settle when scheduled:
 - Bonus fit: re-importing after a parser fix (e.g. M20's Hydrow distance) becomes
   first-class UX instead of "delete + re-upload".
 
-## Per-user frontend themes, dark mode first (parked 2026-09-08)
+## ~~Per-user frontend themes, dark mode first~~ — shipped as M25 (2026-09-13)
 
-Let the user pick a UI theme; **dark mode** is the obvious first one. It is
-user-configurable, so — like the units setting (M14) — it lives in the DB
-per user, not client-only.
-
-- **Storage**: a theme is multi-valued (light / dark, possibly "system"), so
-  the reference-table rule applies: `ui_themes` (PK value + description, seeded
-  immutable) + `user_profiles.theme text NULL` FK; NULL = the app default. (The
-  M14 timestamp trick does not apply — it was a two-state setting.)
-- **Frontend**: `web/src/index.css` defines the palette as a small set of
-  semantic tokens (`canvas`, `surface`, `ink*`, `line`, accent, …) in a
-  Tailwind v4 `@theme` block and every component uses those tokens — so dark
-  mode is **redefining ~10 token values under a `.dark` class** (Tailwind v4
-  `@custom-variant dark`), not a component-by-component sweep. The real work:
-  hardcoded colors in the recharts charts and Leaflet map tiles (light/dark
-  tile layers).
-- A theme context mirroring `UnitsProvider`: seed from localStorage pre-paint
-  (no wrong-theme flash before the profile loads), then sync to the profile;
-  `PATCH /users/me/profile` gains a field.
-- Scope decisions for scheduling: include "system" (follow the OS, via a
-  `matchMedia` listener) in v1? Accent-color theming — later, if ever.
+`ui_themes` reference table + `user_profiles.theme`; the palette is semantic
+tokens redefined under a `.dark` class on `<html>` (pre-paint script, no
+flash); `ThemeProvider` mirrors the units/timezone contexts and resolves
+"system" via a live `matchMedia` listener; recharts take explicit dark values
+(SVG attributes don't resolve CSS variables) and the route map swaps to a CARTO
+dark basemap. Light / dark / system are all in v1; see `docs/progress.md`
+(M25a–M25b) and the *Theme* section in `docs/usage.md`. Remaining: accent-color
+theming — later, if ever.
 
 ## Activity images: Strava photo fetch (parked 2026-09-08)
 

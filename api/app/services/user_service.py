@@ -158,6 +158,15 @@ class UserService:
         else:
             timezone = current.timezone if current is not None else None
 
+        # The UI theme (M25a): stored as chosen; null clears back to the app
+        # default (light), which the view renders for a NULL. The closed value
+        # set is enforced by the request model (Literal) and the FK; there is
+        # nothing free-form to validate here.
+        if "theme" in provided:
+            theme: str | None = request.theme
+        else:
+            theme = current.theme if current is not None else None
+
         self._validate_date_of_birth(date_of_birth, today)
         self._validate_custom_zones(cz1, cz2, cz3, cz4)
         self._validate_timezone(timezone)
@@ -173,6 +182,7 @@ class UserService:
             custom_zone_4_top_bpm=cz4,
             imperial_units_enabled_at=imperial_units_enabled_at,
             timezone=timezone,
+            theme=theme,
         )
         self._unit_of_work.commit()
         logger.info("Updated health settings for %s", user_id)

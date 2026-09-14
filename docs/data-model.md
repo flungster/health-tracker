@@ -45,7 +45,7 @@ never alters the schema. This document describes the current model (as of the
 ## Relationship overview
 
 ```
-users 1───┬───1 user_profiles
+users 1───┬───1 user_profiles ──> ui_themes (reference, NULL)
           │
           ├───* provider_accounts ──> providers (reference)
           │
@@ -109,6 +109,7 @@ strictly-ascending set of four custom zone boundaries > a manually entered
 | `custom_zone_1_top_bpm` … `custom_zone_4_top_bpm` | `int` NULL × 4 | bpm, each > 0 and ≤ 300. User-defined tops of zones 1–4 (zone 5 is above zone 4's top). Valid only as a complete strictly-ascending set of four; all NULL when custom zones are not in use. |
 | `imperial_units_enabled_at` | `timestamptz` NULL | When the user enabled **imperial display units** (M14). A timestamp, not a boolean: NULL = metric (the default), set = imperial in effect since that instant — so the column answers both "is it on?" and "since when?". Toggling back to metric clears the column (a two-state setting; the last enable instant is dropped). **Display-only**: activity data stays stored in SI units (see `activities`); conversion to the user's display system happens at the API view layer. |
 | `timezone` | `text` NULL (M23) | IANA timezone name (e.g. `Europe/Berlin`) for **displaying** dates/times, or NULL = the browser's local timezone. Validated against `zoneinfo` at write time; no schema-level value constraint (the IANA set evolves). **Display-only**: stored timestamps remain UTC; the client converts at render time. |
+| `theme` | `text` NULL, FK → ui_themes.value (M25) | Selected UI theme (`light` / `dark` / `system`; `"system"` is resolved client-side). NULL = the app default (light), which the API view renders, so clients always see an effective choice. **Display-only.** |
 | audit | | |
 
 ### `activities`
@@ -342,6 +343,19 @@ until its activity does (FK cascade).
 | `data` | `json` CHECK array-of-objects | The hourly snapshot: one object per UTC hour with `time`, `temperature_c`, `apparent_temperature_c`, `relative_humidity_pct`, `dew_point_c` (WMO) `weather_code`. Standard-SQL JSON — a display-only blob the client reads whole, never queried into. Missing upstream values stay null inside it. |
 | audit | | Partial unique index on `activity_id` where live (at most one snapshot per activity). |
 
+### `ui_themes`
+
+Reference table of the UI themes a user can select (M25). Seeded and immutable
+(same convention as the other reference tables): `light`, `dark` and
+`system`. A profile's NULL theme means the app default (light); `"system"` is
+resolved client-side, so no other schema is involved.
+
+| Column | Type | Notes |
+|---|---|---|
+| `value` | `text` PK | The theme code and the public API value (`light`, `dark`, `system`). |
+| `description` | `text` | Human-readable label for UI display (e.g. Dark). |
+| `created_at` | `timestamptz` | Only audit column. |
+
 ### `zone_sources`
 
 Reference table of the reference a heart-rate zone snapshot was computed from.
@@ -449,6 +463,7 @@ time of writing.)
 | `20260911000001_activity_images.sql` | Activity images (M22b): `image_sources` reference table (seeded with `uploaded`) + `activity_images` (photos per activity; bytes live on disk under `uploads/<user_id>/images/`, row is authoritative). |
 | `20260911000002_user_timezone.sql` | Display timezone (M23a): `user_profiles.timezone text NULL` — IANA zone name for rendering dates, NULL = browser local. Display-only; no other schema touched. |
 | `20260911000003_activity_weather.sql` | Cached activity weather (M24a): `activity_weather` — at most one live snapshot per activity (`lat`/`lon` of the point measured for, `fetched_at`, hourly series in a standard-SQL `json` column); FK CASCADE to the activity. |
+| `20260913000001_ui_themes.sql` | Per-user UI theme (M25a): `ui_themes` reference table (seeded `light` / `dark` / `system`) + `user_profiles.theme text NULL` FK — display-only; no other schema touched. |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

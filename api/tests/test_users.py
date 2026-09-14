@@ -140,6 +140,8 @@ EMPTY_PROFILE: dict[str, Any] = {
     "units_system": "metric",
     # Display timezone; null = the browser's local zone (M23a).
     "timezone": None,
+    # UI theme; the effective choice — light is the app default (M25a).
+    "theme": "light",
 }
 
 
@@ -319,6 +321,42 @@ def test_profile_timezone_rejects_unknown_name(client: TestClient, register_user
     error: dict[str, Any] = response.json()["error"]
     assert error["code"] == "VALIDATION_ERROR"
     assert "Not/AZone" in error["message"]
+
+
+def test_profile_theme_set_and_cleared(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    # A valid theme is stored and shown in the view.
+    set_response = client.patch("/api/v1/users/me/profile", json={"theme": "dark"}, headers=headers)
+    assert set_response.status_code == 200, set_response.text
+    assert set_response.json() == _view(theme="dark")
+
+    # An explicit null clears back to the app default, which renders as light.
+    cleared = client.patch("/api/v1/users/me/profile", json={"theme": None}, headers=headers)
+    assert cleared.status_code == 200, cleared.text
+    cleared_view: dict[str, Any] = cleared.json()
+    assert cleared_view["theme"] == "light"
+
+
+def test_profile_theme_omitted_kept(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+
+    client.patch("/api/v1/users/me/profile", json={"theme": "system"}, headers=headers)
+    view = client.patch(
+        "/api/v1/users/me/profile", json={"max_heart_rate": 185}, headers=headers
+    ).json()
+    assert view["theme"] == "system"
+
+
+def test_profile_theme_rejects_unknown_value(client: TestClient, register_user: Any) -> None:
+    body: dict[str, Any] = register_user()
+    headers = _auth_headers(body["token"])
+    response = client.patch("/api/v1/users/me/profile", json={"theme": "sepia"}, headers=headers)
+    assert response.status_code == 422
+    error: dict[str, Any] = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
 
 
 def test_profile_rejects_future_date_of_birth(client: TestClient, register_user: Any) -> None:

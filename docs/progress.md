@@ -49,6 +49,8 @@ to Done in the overview.
 | M23b | User timezone (II): client renders in the saved zone — tz-aware day/period boundaries + formatters, `useTimezone()` context (profile-synced), Profile "Time zone" card; completes M23 | Done | 2026-09-11 |
 | M24a | Weather along an activity (I): db + API core — `activity_weather` cache (json snapshot), opt-in GET/POST weather routes, Open-Meteo client (keyless) with `WEATHER_ERROR` 502 | Done | 2026-09-13 |
 | M24b | Weather along an activity (II): web — opt-in "Show weather" card on the detail page: start/end condition chips + temperature-over-time curve (≥90 min), WMO labels, Open-Meteo attribution; completes M24 | Done | 2026-09-13 |
+| M25a | Per-user theme (I): db + API core — `ui_themes` reference table, `user_profiles.theme`, profile view/PATCH (light/dark/system; NULL = app default light) | Done | 2026-09-13 |
+| M25b | Per-user theme (II): web — semantic tokens redefined under `.dark` on `<html>` (pre-paint script), `ThemeProvider` with live "system" resolution, Profile Theme card, theme-aware charts + CARTO dark map tiles; completes M25 | Done | 2026-09-13 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -57,6 +59,95 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M25b — Per-user theme (II): dark mode in the client (2026-09-13)
+
+The UI half of M25: the palette flips without a component-by-component sweep.
+Scope decisions (from the parking sketch): **"system" is in v1** and the dark
+route map uses **CARTO's free `dark_matter` basemap** (same OSM data, same
+tile-server class as the light map).
+
+### What landed
+- **`web/src/index.css`** — dark theme = the same semantic tokens redefined
+  under a `.dark` class (`canvas`, `surface`, `ink*`, `line`, accent family,
+  danger/warn — warm stone-dark palette, lighter teal for contrast). Every
+  component already speaks tokens (`bg-canvas text-ink border-line`, …), so the
+  whole app follows with zero per-component edits. `accent-dark` means "the
+  pressed state of the accent", which is *lighter* on a dark canvas.
+- **No flash** — an inline script in `index.html` reads the stored choice and
+  puts `.dark` on `<html>` before React mounts ("system" resolved via
+  `matchMedia`); the provider keeps it in sync afterwards.
+- **`web/src/theme/context.tsx`** — `ThemeProvider` / `useTheme()` mirroring
+  the units/timezone contexts: localStorage-seeded (`health-tracker.theme`),
+  profile-synced (source of truth; the server never sends null), and — new for
+  this one — a **live `matchMedia` listener** so "system" follows an OS theme
+  switch mid-session without a reload. Exposes the stored choice *and* the
+  resolved `dark` boolean.
+- **Profile → Theme card** — Light / Dark / System buttons (units-card style,
+  own mutation instance); the dark class flips immediately on click and is
+  confirmed by the save. `theme` added to `ProfileView` (effective, never null)
+  and `ProfileUpdateInput`.
+- **Charts** (`theme/chartColors.ts`) — SVG attributes don't resolve CSS
+  variables, so recharts takes explicit per-theme hexes mirroring the tokens:
+  grid/ticks/tooltip box/hover cursor, a lighter accent line/bar in dark and a
+  lifted zone ramp; `chartPalette(dark)` + `tooltipStyle(palette)`. Applied to
+  HR, zone bars and the dashboard distance trend + the weather temperature
+  curve. SportBadge mid-tones are theme-agnostic (unchanged).
+- **Route map** — `TileLayer` swaps to CARTO `dark_all` in dark mode (attribution
+  carried) with a key forcing Leaflet to swap layers; the route polyline uses
+  the palette accent.
+
+### Tests (8 new web)
+7 `ThemeProvider` unit tests with a controllable matchMedia stub: light default;
+localStorage seed (incl. the class kept in sync on mount); "system" follows a
+stubbed dark OS; **live OS flips apply and reverse without a reload**; setTheme
+persists + toggles the class; profile sync wins over stale storage (and persists
+the winner); throw outside a provider. The weather card test gained a theme mock
+(its temperature chart now resolves colors through the context).
+
+### Gates + live
+`make lint && make test` green (**331 API / 69 web**). Live on :9090 (rebuilt):
+profile default `light` → PATCH `dark` persists and reads back; `sepia` → 422
+envelope; null clears to the effective default. Served bundle carries the
+pre-paint script, the `.dark` token values and the CARTO dark tile URL.
+
+### M25 status
+Complete: stored per user (M25a), rendered everywhere incl. charts and map
+(M25b). "Accent-color theming" stays parked in `future-ideas.md` (later, if
+ever).
+
+## M25a — Per-user theme (I): db + API core for UI themes (2026-09-13)
+
+First of a two-part set unparking "Per-user frontend themes, dark mode first":
+the storage + API half. Display-only by the M14/M23 precedent — like units and
+timezone, nothing about stored activity data changes with it.
+
+### What landed
+- **Migration `20260913000001_ui_themes.sql`** — `ui_themes` reference table
+  (PK value + description, seeded `light` / `dark` / `system`, immutable per
+  the reference-table rule — no audit columns) + `user_profiles.theme text NULL`
+  FK. **NULL = the app default (light)**; "system" is resolved client-side, so
+  no other schema is involved. Verified up AND down on the test db (seeded rows +
+  FK confirmed in psql). Chosen over a boolean: the value set is open to growth
+  (e.g. accent theming) and membership must be schema-enforced, not code-only.
+- **Model** `UiTheme` (reference-table shape, registered in the models package) +
+  the FK column on `UserProfile`.
+- **API** — `theme` added to the profile surface, following `units_system`: a
+  closed set enforced by the request model (`Literal["light", "dark", "system"]`)
+  with the global `RequestValidationError` handler producing the app envelope —
+  no free-form string, so there is nothing for the service to validate (the FK
+  is the schema backstop). The view returns the **effective** theme, never null:
+  a stored NULL renders as `"light"`, so clients get the same three-value
+  contract as `units_system`. PATCH: a value stores it, explicit null clears to
+  the default, omitted keeps (per-field merge in `update_profile` + DAO).
+
+### Tests (4 new API)
+Profile round-trips: set `dark` / read back, explicit null clears to the
+effective `"light"`, omitted keeps (`system` survives an unrelated field write),
+unknown value `sepia` → 422 envelope. DAO: theme round-trips and a deliberate
+clear returns the column to NULL (mirrors the units-timestamp test).
+
+**Gates:** `make lint` + `make test` green (**331 API / 62 web**).
 
 ## M24b — Weather along an activity (II): the opt-in weather card (2026-09-13)
 

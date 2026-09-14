@@ -56,3 +56,8 @@ class ProfileView(BaseModel):
     # IANA time-zone name for rendering timestamps and day boundaries (M23a);
     # null = the browser's local timezone. Display-only, stored as-is.
     timezone: str | None  # e.g. "Europe/Berlin"
+
+    # Selected UI theme (M25a). The effective choice: a stored NULL renders as
+    # the app default, so this is always "light" | "dark" | "system", never
+    # null (like units_system). Display-only.
+    theme: str  # "light" | "dark" | "system"

@@ -60,6 +60,9 @@ class ProfileUpdateRequest(BaseModel):
     custom_zone_3_top_bpm: int | None = Field(default=None, ge=30, le=300)
     custom_zone_4_top_bpm: int | None = Field(default=None, ge=30, le=300)
     units_system: Literal["metric", "imperial"] | None = Field(default=None)
+    # UI theme (M25a): "light", "dark" or "system" (follow the OS, resolved in
+    # the browser). null = back to the app default (light); omitted keeps.
+    theme: Literal["light", "dark", "system"] | None = Field(default=None)
     # IANA time-zone name (e.g. "Europe/Berlin"); validated in the service so
     # clients get the app error envelope. null = browser local (the default).
     timezone: str | None = Field(default=None, max_length=64)

@@ -5,8 +5,29 @@ import { MapContainer, Polyline, TileLayer } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 
 import type { TrackpointView } from "../api/types";
+import { chartPalette } from "../theme/chartColors";
+import { useTheme } from "../theme/context";
 
 export default function RouteMap({ trackpoints }: { trackpoints: TrackpointView[] }) {
+  const dark = useTheme().dark;
+  const palette = chartPalette(dark);
+
+  // Light theme: the standard OpenStreetMap tiles. Dark theme: CARTO's free
+  // dark basemap (same OSM data, same tile-server class) so the map does not
+  // glare inside a dark UI. The key forces Leaflet to swap layers cleanly.
+  const tiles = dark
+    ? {
+        key: "carto-dark",
+        url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      }
+    : {
+        key: "osm",
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      };
+
   const positions = useMemo<LatLngExpression[]>(() => {
     const result: LatLngExpression[] = [];
     for (const point of trackpoints) {
@@ -53,11 +74,8 @@ export default function RouteMap({ trackpoints }: { trackpoints: TrackpointView[
         scrollWheelZoom={false}
         style={{ height: "100%", width: "100%" }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <Polyline positions={positions} pathOptions={{ color: "#2f6f6a", weight: 4 }} />
+        <TileLayer key={tiles.key} attribution={tiles.attribution} url={tiles.url} />
+        <Polyline positions={positions} pathOptions={{ color: palette.accent, weight: 4 }} />
       </MapContainer>
     </div>
   );

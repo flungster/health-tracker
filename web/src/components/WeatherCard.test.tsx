@@ -36,6 +36,10 @@ vi.mock("../timezone/context", () => ({
   useTimezone: () => ({ timeZone: null, setTimeZone: vi.fn() }),
 }));
 
+vi.mock("../theme/context", () => ({
+  useTheme: () => ({ theme: "light", dark: false, setTheme: vi.fn() }),
+}));
+
 import type { ActivityWeatherView } from "../api/types";
 import WeatherCard, { weatherLabel } from "./WeatherCard";
 

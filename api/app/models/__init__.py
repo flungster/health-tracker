@@ -15,6 +15,7 @@ from app.models.server_setting import ServerSetting
 from app.models.sport_activity import SportActivityMixin
 from app.models.strength_activity import StrengthActivity
 from app.models.strength_exercise_set import StrengthExerciseSet
+from app.models.ui_theme import UiTheme
 from app.models.zone_source import ZoneSource
 
 __all__ = [
@@ -34,5 +35,6 @@ __all__ = [
     "SportActivityMixin",
     "StrengthActivity",
     "StrengthExerciseSet",
+    "UiTheme",
     "ZoneSource",
 ]

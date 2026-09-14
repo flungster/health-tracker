@@ -17,6 +17,28 @@
   --color-warn: #a06a1f;
 }
 
+/*
+ * Dark theme (M25b): the same semantic tokens redefined for a dark canvas.
+ * The `dark` class is put on <html> — before first paint by the inline script
+ * in index.html, afterwards by ThemeProvider — so every component that uses a
+ * token (bg-canvas, text-ink, border-line, …) follows the theme with no
+ * per-component changes. `accent-dark` means "the pressed/hover state of the
+ * accent", which is lighter than the accent on a dark canvas.
+ */
+.dark {
+  --color-canvas: #1b1a18;
+  --color-surface: #232220;
+  --color-ink: #e8e6e1;
+  --color-ink-muted: #a3a098;
+  --color-ink-faint: #75726b;
+  --color-line: #34322f;
+  --color-accent: #4d9a93;
+  --color-accent-dark: #63b1a9;
+  --color-accent-soft: #24352f;
+  --color-danger: #d4674a;
+  --color-warn: #d99c3f;
+}
+
 body {
   @apply bg-canvas text-ink antialiased;
 }
