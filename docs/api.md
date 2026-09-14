@@ -595,14 +595,15 @@ Weather view:
   "lat": 48.85,                 // the point measured for (the first GPS trackpoint)
   "lon": 2.35,
   "fetched_at": "2026-09-13T08:05:00Z",
+  "units": "metric",            // the system point temperatures are expressed in (M14b)
   "points": [                   // one entry per UTC hour across the activity's day range
     {
       "time": "2026-09-13T08:00:00Z",
-      "temperature_c": 21.3,             // null when the upstream value is missing
-      "apparent_temperature_c": 20.9,    // "feels-like"
-      "relative_humidity_pct": 54.0,
-      "dew_point_c": 12.1,
-      "weather_code": 3                  // WMO interpretation code (client maps to a label)
+      "temperature": 21.3,             // display units (°C / °F per `units`); null when missing
+      "apparent_temperature": 20.9,    // "feels-like", display units
+      "relative_humidity_pct": 54.0,   // unitless percentage (never converted)
+      "dew_point": 12.1,               // display units (°C / °F per `units`)
+      "weather_code": 3                // WMO interpretation code (client maps to a label)
     }
   ]
 }
@@ -610,6 +611,15 @@ Weather view:
 
 All times are UTC ISO 8601; the client renders them in the user's display
 timezone (M23). Values that are missing upstream stay `null` end to end.
+
+**Unit systems.** Like every other unit-bearing response, temperatures follow
+the caller's profile setting: the stored snapshot is always Celsius (the
+upstream format) and the API converts at read time (`"imperial"` callers get
+°F, exact conversion), naming the system in `units`. Switching units never
+re-fetches or rewrites anything — it changes how the same cached row reads. The
+client plots only the activity's own hours of that day range (start hour through
+end hour); pre-start and post-end hours exist in the snapshot for cache reuse,
+not display.
 
 ## Sports
 

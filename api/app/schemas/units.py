@@ -85,6 +85,18 @@ def display_pace_seconds(seconds_per_km: float | None, units: UnitSystem) -> flo
     return seconds_per_km
 
 
+def display_temperature(celsius: float | None, units: UnitSystem) -> float | None:
+    """A temperature in the display system (°C or °F).
+
+    The conversion is exact (°F = C × 9/5 + 32), so no information is lost.
+    """
+    if celsius is None:
+        return None
+    if units is UnitSystem.IMPERIAL:
+        return celsius * 9.0 / 5.0 + 32.0
+    return celsius
+
+
 def display_weight(kilograms: float | None, units: UnitSystem) -> float | None:
     """A weight in the display system (kg or lb)."""
     if kilograms is None:

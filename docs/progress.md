@@ -51,6 +51,7 @@ to Done in the overview.
 | M24b | Weather along an activity (II): web — opt-in "Show weather" card on the detail page: start/end condition chips + temperature-over-time curve (≥90 min), WMO labels, Open-Meteo attribution; completes M24 | Done | 2026-09-13 |
 | M25a | Per-user theme (I): db + API core — `ui_themes` reference table, `user_profiles.theme`, profile view/PATCH (light/dark/system; NULL = app default light) | Done | 2026-09-13 |
 | M25b | Per-user theme (II): web — semantic tokens redefined under `.dark` on `<html>` (pre-paint script), `ThemeProvider` with live "system" resolution, Profile Theme card, theme-aware charts + CARTO dark map tiles; completes M25 | Done | 2026-09-13 |
+| M26 | Weather fixes: chart spans the activity's own hours (not its whole day) + temperatures follow the caller's unit system at read time | Done | 2026-09-14 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -59,6 +60,53 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M26 — Weather fixes: activity-window chart + display-unit temperatures (2026-09-14)
+
+Bugfix milestone from a live report on an early-morning run (Santa Clarita,
+08:28–11:57 local): the temperature curve "drops as time goes by" with
+timestamps that don't match a 3.5-hour activity, and temperatures never leave
+Celsius for imperial users.
+
+### What was wrong (diagnosed on the real record)
+- **The chart plotted all 24 stored hours, not the activity's span.** The M24a
+  snapshot intentionally covers every UTC hour of the day range (cache reuse),
+  but `TemperatureChart` mapped *every* point to "minutes since start" and clamped
+  negative offsets to `0h 0m`. The sixteen pre-dawn samples (a falling
+  overnight series) piled onto identical `0h 0m` ticks, and the axis stretched
+  to ~7½ hours for a 3h29m run. The activity's own window (15:28–18:57Z) was
+  in fact rising — the user's memory matched the data; only the plotting window
+  was wrong.
+- **Temperatures ignored the units setting.** The view passed stored Celsius
+  through with a hardcoded `°C` in the UI — unlike every other unit-bearing
+  response, which convert at read time (M14b).
+
+### What landed
+- **Web** — new exported pure helper `activityWindowPoints(points, startedAt,
+  endedAt)`: keeps only the snapshot hours from start hour through end hour (UTC
+  bucketing; ≥2 points guaranteed for efforts long enough to earn the curve, and
+  it spans both days across UTC midnight). The chart now plots exactly that — the
+  first sample may sit slightly before the start and clamps to `0h 0m`
+  ("conditions at the start"). Start/end chips unchanged (nearest hour).
+- **API + web — units** — `display_temperature` in `app/schemas/units.py` (°F =
+  C×9/5+32, exact); the view now carries `units` (the caller's system) and
+  unit-neutral temperature fields (`temperature`, `apparent_temperature`,
+  `dew_point`), converted in the mapper at read time from the stored Celsius
+  snapshot (which is never touched — switching units re-reads, it does not
+  re-fetch). The service resolves the caller's system like every other activity
+  view (`profile_dao` + `units_for`). The UI shows the unit explicitly: chips
+  read `21°C` / `69°F`, tooltips match.
+
+### Tests (5 new)
+3 unit tests for the window helper, including a regression case modeled on the
+reported record (full-day snapshot → exactly hours 15–18) and a UTC-midnight
+span; an API test proving °C→°F at read time (20.5°C = 68.9°F, nulls stay
+null, profile flip back to metric reads °C again — and the upstream fake was
+called exactly once for all of it); a web test for imperial chip rendering.
+
+**Gates:** `make lint && make test` green (**332 API / 73 web**). Live on :9090:
+re-fetched a GPS activity with the smoke account in metric, then imperial — same
+cached row read back converted; no re-fetch.
 
 ## M25b — Per-user theme (II): dark mode in the client (2026-09-13)
 

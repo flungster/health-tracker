@@ -7,7 +7,7 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { useActivityWeather, useFetchWeather } from "../api/hooks";
-import type { ActivityWeatherView, WeatherPointView } from "../api/types";
+import type { ActivityWeatherView, Units, WeatherPointView } from "../api/types";
 import { clockFromSeconds, formatClock } from "../format";
 import { chartPalette, tooltipStyle } from "../theme/chartColors";
 import { useTheme } from "../theme/context";
@@ -68,37 +68,69 @@ function nearestPoint(points: WeatherPointView[], isoInstant: string): WeatherPo
   return best;
 }
 
-/** "21°" style temperatures (nulls render as an em dash, like the rest of the UI). */
-function temp(celsius: number | null): string {
-  return celsius === null ? "—" : `${Math.round(celsius)}°`;
+/** "21°C" / "70°F" style temperatures (nulls render as an em dash, like the
+ *  rest of the UI). Values arrive in the caller's display units (the API
+ *  converts, M14b), so the suffix just names that system. */
+function temp(value: number | null, units: Units): string {
+  if (value === null) {
+    return "—";
+  }
+  const suffix = units === "imperial" ? "°F" : "°C";
+  return `${Math.round(value)}${suffix}`;
 }
 
-type ConditionChipProps = { label: string; point: WeatherPointView };
+type ConditionChipProps = { label: string; point: WeatherPointView; units: Units };
 
-function ConditionChip({ label, point }: ConditionChipProps) {
+function ConditionChip({ label, point, units }: ConditionChipProps) {
   return (
     <div className="rounded-md border border-line bg-canvas px-4 py-3">
       <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">{label}</p>
       <p className="mt-1 text-sm font-semibold text-ink">
-        {weatherLabel(point.weather_code)} · {temp(point.temperature_c)}
+        {weatherLabel(point.weather_code)} · {temp(point.temperature, units)}
       </p>
       <div className="mt-2 grid grid-cols-3 gap-x-4 text-xs text-ink-muted">
-        <span>Feels {temp(point.apparent_temperature_c)}</span>
+        <span>Feels {temp(point.apparent_temperature, units)}</span>
         <span>Humidity {point.relative_humidity_pct === null ? "—" : `${Math.round(point.relative_humidity_pct)}%`}</span>
-        <span>Dew point {temp(point.dew_point_c)}</span>
+        <span>Dew point {temp(point.dew_point, units)}</span>
       </div>
     </div>
   );
 }
 
+/** The snapshot hours belonging to the activity's own span, not its whole day.
+ *
+ *  The stored snapshot covers every UTC hour of the activity's day range (so a
+ *  page re-open never needs another fetch), but "temperature over the activity"
+ *  means only the hours from its start hour through its end hour. Bucketing by
+ *  UTC hour (the epoch aligns to it) always yields at least two points for the
+ *  efforts long enough to earn a curve. */
+export function activityWindowPoints(
+  points: WeatherPointView[],
+  startedAt: string,
+  endedAt: string,
+): WeatherPointView[] {
+  const hourMs = 3_600_000;
+  const firstHour = Math.floor(new Date(startedAt).getTime() / hourMs);
+  const lastHour = Math.floor(new Date(endedAt).getTime() / hourMs);
+  return points.filter((point) => {
+    const pointHour = Math.floor(new Date(point.time).getTime() / hourMs);
+    return pointHour >= firstHour && pointHour <= lastHour;
+  });
+}
+
 /** Temperature over the course of the activity (hours, user's timezone). */
-function TemperatureChart({ weather, startedAt }: { weather: ActivityWeatherView; startedAt: string }) {
+function TemperatureChart({ weather, startedAt, endedAt }: { weather: ActivityWeatherView; startedAt: string; endedAt: string }) {
   const palette = chartPalette(useTheme().dark);
+  // Only the activity's own hours — pre-start evening data would otherwise be
+  // clamped onto "0:00" and stretch the axis past the finish (see
+  // activityWindowPoints). The first sample can sit slightly before the start;
+  // its offset clamps to "0h 0m" ("conditions at the start").
   const start = new Date(startedAt).getTime();
-  const data = weather.points.map((point) => ({
+  const data = activityWindowPoints(weather.points, startedAt, endedAt).map((point) => ({
     time: clockFromSeconds(Math.max(0, Math.round((new Date(point.time).getTime() - start) / 1000))),
-    temperature: point.temperature_c,
+    temperature: point.temperature,
   }));
+  const unitSuffix = weather.units === "imperial" ? "°F" : "°C";
   return (
     <div className="mt-4 h-56 w-full">
       <p className="mb-2 text-sm font-medium text-ink-muted">Temperature over the activity</p>
@@ -108,7 +140,7 @@ function TemperatureChart({ weather, startedAt }: { weather: ActivityWeatherView
           <YAxis tick={{ fontSize: 11, fill: palette.tick }} domain={["dataMin - 2", "dataMax + 2"]} />
           <Tooltip
             contentStyle={{ ...tooltipStyle(palette) }}
-            formatter={(value) => [`${value}°C`, "Temperature"]}
+            formatter={(value) => [`${Math.round(Number(value))}${unitSuffix}`, "Temperature"]}
           />
           <Line
             type="monotone"
@@ -180,15 +212,17 @@ export default function WeatherCard({ activityId, startedAt, endedAt }: WeatherC
   return (
     <div>
       {weather.points.length === 1 ? (
-        <ConditionChip label="Conditions" point={start} />
+        <ConditionChip label="Conditions" point={start} units={weather.units} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          <ConditionChip label={`Start · ${formatClock(startedAt, timeZone)}`} point={start} />
-          <ConditionChip label={`End · ${formatClock(endedAt, timeZone)}`} point={end} />
+          <ConditionChip label={`Start · ${formatClock(startedAt, timeZone)}`} point={start} units={weather.units} />
+          <ConditionChip label={`End · ${formatClock(endedAt, timeZone)}`} point={end} units={weather.units} />
         </div>
       )}
 
-      {longEffort && <TemperatureChart weather={weather} startedAt={startedAt} />}
+      {longEffort && (
+        <TemperatureChart weather={weather} startedAt={startedAt} endedAt={endedAt} />
+      )}
 
       <p className="mt-3 text-xs text-ink-faint">
         Weather data by{" "}

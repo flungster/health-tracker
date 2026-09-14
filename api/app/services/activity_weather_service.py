@@ -14,12 +14,14 @@ from uuid import UUID
 from app.dao.activity_dao import ActivityDao
 from app.dao.activity_trackpoint_dao import ActivityTrackpointDao
 from app.dao.activity_weather_dao import ActivityWeatherDao
+from app.dao.user_profile_dao import UserProfileDao
 from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import NotFoundError, ValidationError
 from app.models.activity import Activity
 from app.schemas.mappers.activity_weather_mapper import (
     ActivityWeatherMapper,
 )
+from app.schemas.units import UnitSystem, units_for
 from app.schemas.views.activity_weather_views import (
     ActivityWeatherView,
 )
@@ -35,12 +37,14 @@ class ActivityWeatherService:
         weather_dao: ActivityWeatherDao,
         activity_dao: ActivityDao,
         trackpoint_dao: ActivityTrackpointDao,
+        profile_dao: UserProfileDao,
         client: OpenMeteoClient,
     ) -> None:
         self._uow = unit_of_work
         self._weather_dao = weather_dao
         self._activity_dao = activity_dao
         self._trackpoint_dao = trackpoint_dao
+        self._profile_dao = profile_dao
         self._client = client
 
     def get_for_user(self, user_id: UUID, activity_uuid: UUID) -> ActivityWeatherView:
@@ -49,7 +53,7 @@ class ActivityWeatherService:
         snapshot = self._weather_dao.get_live_for_activity(activity_uuid)
         if snapshot is None:
             raise NotFoundError("Weather has not been fetched for this activity yet.")
-        return ActivityWeatherMapper.to_view(snapshot)
+        return ActivityWeatherMapper.to_view(snapshot, self._units_for(user_id))
 
     def fetch_or_cached(self, user_id: UUID, activity_uuid: UUID) -> ActivityWeatherView:
         """The snapshot of the caller's activity, fetching it on first use.
@@ -63,7 +67,7 @@ class ActivityWeatherService:
 
         cached = self._weather_dao.get_live_for_activity(activity.uuid)
         if cached is not None:
-            return ActivityWeatherMapper.to_view(cached)
+            return ActivityWeatherMapper.to_view(cached, self._units_for(user_id))
 
         point = self._trackpoint_dao.first_geographic_point(activity.uuid)
         if point is None:
@@ -87,12 +91,17 @@ class ActivityWeatherService:
             # the row (nothing durable), so retrying fetches again — correct.
             self._uow.rollback()
             raise
-        return ActivityWeatherMapper.to_view(snapshot)
+        return ActivityWeatherMapper.to_view(snapshot, self._units_for(user_id))
 
     @staticmethod
     def _utc_day(moment: datetime) -> date:
         """The UTC calendar day of an instant (the API's stored-time unit)."""
         return moment.astimezone(UTC).date()
+
+    def _units_for(self, user_id: UUID) -> UnitSystem:
+        """The caller's display unit system (metric when there is no profile)."""
+        profile = self._profile_dao.get(user_id)
+        return units_for(profile.imperial_units_enabled_at if profile is not None else None)
 
     def _require_activity(self, user_id: UUID, activity_uuid: UUID) -> Activity:
         """The caller's own activity or a 404 (someone else's reads as missing)."""

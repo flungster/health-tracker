@@ -98,7 +98,9 @@ Clicking an activity opens its detail page:
   Open-Meteo (your data, on demand — nothing is fetched at import time) and
   caches it: conditions at start and end (condition, temperature, feels-like,
   humidity, dew point), plus a temperature-over-time curve for efforts of about
-  an hour and a half or more. Re-opening the page never re-fetches. Weather is
+  an hour and a half or more — the curve spans exactly your activity's hours,
+  not its whole day. Temperatures are shown in your display units (°C or °F,
+  like everything else). Re-opening the page never re-fetches. Weather is
   model/grid data (~10 km cells) for the activity's start point, not a station
   reading — good to know when judging a hot day.
 - **Splits** — one table in your display unit system (per-kilometre or

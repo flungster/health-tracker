@@ -201,10 +201,13 @@ export type ActivityImagesView = {
  *  the UI shows an em dash for a missing field. */
 export type WeatherPointView = {
   time: string; // ISO 8601 UTC hour, e.g. "2026-09-11T08:00:00Z"
-  temperature_c: number | null;
-  apparent_temperature_c: number | null; // "feels-like"
+  // Temperature fields are in the caller's display unit system (named by
+  // ActivityWeatherView.units): °C for metric, °F for imperial. The API converts
+  // the stored Celsius snapshot at read time (M14b).
+  temperature: number | null;
+  apparent_temperature: number | null; // "feels-like"
   relative_humidity_pct: number | null;
-  dew_point_c: number | null;
+  dew_point: number | null;
   weather_code: number | null; // WMO code (see weatherLabel)
 };
 
@@ -214,7 +217,8 @@ export type ActivityWeatherView = {
   lat: number;
   lon: number;
   fetched_at: string; // ISO 8601 UTC — when the upstream fetch happened
-  points: WeatherPointView[]; // one per hour, UTC
+  units: Units; // "metric" | "imperial": what point temperatures are expressed in
+  points: WeatherPointView[]; // one per hour, UTC (the activity's day range)
 };
 
 export type SportTypeView = {

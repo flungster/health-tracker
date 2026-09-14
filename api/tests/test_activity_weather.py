@@ -110,25 +110,27 @@ def test_fetch_stores_the_snapshot_and_reuses_it(
     assert response.status_code == 200, response.text
     view = cast("dict[str, Any]", response.json())
 
-    assert set(view.keys()) == {"id", "lat", "lon", "fetched_at", "points"}
+    assert set(view.keys()) == {"id", "lat", "lon", "fetched_at", "units", "points"}
     # The snapshot is measured for the activity's first GPS trackpoint.
     assert view["lat"] == 48.85
     assert view["lon"] == 2.35
+    # Metric caller: temperatures pass through unchanged, unit named explicitly.
+    assert view["units"] == "metric"
     points = cast("list[dict[str, Any]]", view["points"])
     assert len(points) == 2
     first = points[0]
     assert set(first.keys()) == {
         "time",
-        "temperature_c",
-        "apparent_temperature_c",
+        "temperature",
+        "apparent_temperature",
         "relative_humidity_pct",
-        "dew_point_c",
+        "dew_point",
         "weather_code",
     }
     assert first["time"] == "2026-09-11T08:00:00Z"
-    assert first["temperature_c"] == 20.5
+    assert first["temperature"] == 20.5
     # Upstream nulls survive the round trip (the UI shows an em dash).
-    assert points[1]["apparent_temperature_c"] is None
+    assert points[1]["apparent_temperature"] is None
 
     # The fetch asked for the activity's UTC day range.
     assert fake_weather.calls == 1
@@ -144,6 +146,53 @@ def test_fetch_stores_the_snapshot_and_reuses_it(
     again_view = cast("dict[str, Any]", again.json())
     assert again_view["id"] == view["id"]  # same row, not a re-fetch
     assert cast("dict[str, Any]", got.json())["id"] == view["id"]
+    assert fake_weather.calls == 1
+
+
+def test_temperatures_follow_the_callers_unit_system(
+    client: TestClient, uploads_dir: Path, fake_weather: FakeWeatherClient
+) -> None:
+    """Point temperatures are converted at read time (M14b); storage stays °C."""
+    token, _ = _register(client, "weather-units@example.com")
+    activity_id = _import(client, token)
+
+    # Metric (the default): °C straight through.
+    metric = cast(
+        "dict[str, Any]",
+        client.post(f"/api/v1/activities/{activity_id}/weather", headers=_auth(token)).json(),
+    )
+    assert metric["units"] == "metric"
+    assert cast("dict[str, Any]", metric["points"][0])["temperature"] == 20.5
+
+    # Switch the profile to imperial: the same cached row reads back in °F
+    # (20.5°C = 68.9°F, exact), with no re-fetch of the upstream service.
+    switched = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "imperial"}, headers=_auth(token)
+    )
+    assert switched.status_code == 200, switched.text
+
+    imperial = cast(
+        "dict[str, Any]",
+        client.get(f"/api/v1/activities/{activity_id}/weather", headers=_auth(token)).json(),
+    )
+    assert imperial["units"] == "imperial"
+    points = cast("list[dict[str, Any]]", imperial["points"])
+    assert points[0]["temperature"] == pytest.approx(68.9)
+    # A missing value stays missing in every system.
+    assert points[1]["apparent_temperature"] is None
+
+    # Back to metric: the stored snapshot was never touched.
+    reverted = client.patch(
+        "/api/v1/users/me/profile", json={"units_system": "metric"}, headers=_auth(token)
+    )
+    assert reverted.status_code == 200, reverted.text
+    again = cast(
+        "dict[str, Any]",
+        client.get(f"/api/v1/activities/{activity_id}/weather", headers=_auth(token)).json(),
+    )
+    assert again["points"][0]["temperature"] == 20.5
+
+    # Conversion happens at read time: the upstream service was called once, ever.
     assert fake_weather.calls == 1
 
 

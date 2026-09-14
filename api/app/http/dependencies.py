@@ -132,6 +132,7 @@ def get_activity_weather_service(
         weather_dao=ActivityWeatherDao(session),
         activity_dao=ActivityDao(session),
         trackpoint_dao=ActivityTrackpointDao(session),
+        profile_dao=UserProfileDao(session),
         client=client,
     )
 

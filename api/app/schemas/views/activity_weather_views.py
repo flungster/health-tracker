@@ -13,13 +13,18 @@ from pydantic import BaseModel
 
 
 class WeatherPointView(BaseModel):
-    """One hour of the snapshot (parallel to its neighbours in ``points``)."""
+    """One hour of the snapshot (parallel to its neighbours in ``points``).
+
+    Temperature fields are unit-bearing: expressed in the caller's display
+    system named by ``ActivityWeatherView.units`` (°C for metric, °F for
+    imperial), converted at read time from the stored Celsius snapshot (M14b).
+    """
 
     time: datetime  # UTC hour the value applies from, e.g. 2026-09-05T13:00Z
-    temperature_c: float | None
-    apparent_temperature_c: float | None
-    relative_humidity_pct: float | None
-    dew_point_c: float | None
+    temperature: float | None  # display units (see above)
+    apparent_temperature: float | None  # "feels-like", display units
+    relative_humidity_pct: float | None  # unitless percentage
+    dew_point: float | None  # display units (see above)
     weather_code: int | None  # WMO code; the UI maps it to a label
 
 
@@ -30,4 +35,5 @@ class ActivityWeatherView(BaseModel):
     lat: float  # the point measured for (the activity's first GPS trackpoint)
     lon: float
     fetched_at: datetime  # when the upstream fetch happened (UTC)
+    units: str  # "metric" | "imperial": the system point temperatures are in
     points: list[WeatherPointView]

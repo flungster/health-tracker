@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from app.models.activity_weather import ActivityWeather
+from app.schemas.units import UnitSystem, display_temperature
 from app.schemas.views.activity_weather_views import (
     ActivityWeatherView,
     WeatherPointView,
@@ -54,21 +55,27 @@ class ActivityWeatherMapper:
         )
 
     @staticmethod
-    def to_view(snapshot: ActivityWeather) -> ActivityWeatherView:
-        """The public view of one snapshot row."""
+    def to_view(snapshot: ActivityWeather, units: UnitSystem) -> ActivityWeatherView:
+        """The public view of one snapshot row.
+
+        The stored snapshot is always Celsius (the upstream format); the
+        temperature fields are converted to the caller's display system here,
+        like every other unit-bearing view (M14b).
+        """
         if not isinstance(snapshot.data, list):  # schema CHECK guarantees this; belt and braces
             raise ValueError("activity_weather.data is not an array.")
-        points = [ActivityWeatherMapper._to_point(entry) for entry in snapshot.data]
+        points = [ActivityWeatherMapper._to_point(entry, units) for entry in snapshot.data]
         return ActivityWeatherView(
             id=snapshot.uuid,
             lat=snapshot.lat,
             lon=snapshot.lon,
             fetched_at=snapshot.fetched_at,
+            units=units.value,
             points=points,
         )
 
     @staticmethod
-    def _to_point(entry: Any) -> WeatherPointView:
+    def _to_point(entry: Any, units: UnitSystem) -> WeatherPointView:
         if not isinstance(entry, dict):
             raise ValueError("activity_weather.data entry is malformed.")
         raw_time = entry.get("time")
@@ -81,12 +88,15 @@ class ActivityWeatherMapper:
             value = entry.get(key)
             return float(value) if isinstance(value, (int, float)) else None
 
+        def temperature(key: str) -> float | None:
+            return display_temperature(number(f"{key}_c"), units)
+
         code = entry.get("weather_code")
         return WeatherPointView(
             time=time,
-            temperature_c=number("temperature_c"),
-            apparent_temperature_c=number("apparent_temperature_c"),
+            temperature=temperature("temperature"),
+            apparent_temperature=temperature("apparent_temperature"),
             relative_humidity_pct=number("relative_humidity_pct"),
-            dew_point_c=number("dew_point_c"),
+            dew_point=temperature("dew_point"),
             weather_code=code if isinstance(code, int) else None,
         )
