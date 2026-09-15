@@ -52,10 +52,15 @@ class SyncResultView(BaseModel):
     ``skipped`` counts activities already imported (deduped); a large
     history may span several runs (the stored cursor resumes where the
     previous one stopped), so counts are per run, not per connection.
+    ``linked_duplicates`` (M28a) counts imported rows that matched an existing
+    activity from another source and were linked to it instead of shown.
     """
 
     imported: int
     skipped: int
+    # Rows that matched an existing activity from another source and were
+    # linked as duplicates of it (M28a): imported, but not shown in feeds.
+    linked_duplicates: int = 0
     last_sync_at: datetime
 
 

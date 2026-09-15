@@ -5,7 +5,8 @@ floor, and the API route.
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
@@ -35,9 +36,18 @@ PAGE_SIZE = 100  # must match the adapter's per-page request
 
 
 def _activities(count: int, start_unix: int, id_base: int) -> list[dict[str, Any]]:
-    """``count`` activities, all starting at the same unix timestamp."""
+    """``count`` activities starting 45 minutes apart from ``start_unix``.
+
+    Distinct start times matter: the sync's cross-source duplicate check (M28a)
+    links imported rows that look like the same workout, and start times closer
+    than 30 minutes would make every row in a batch "match" its neighbours.
+    """
     return [
-        {"id": id_base - index, "name": f"Activity {id_base - index}", "start_unix": start_unix}
+        {
+            "id": id_base - index,
+            "name": f"Activity {id_base - index}",
+            "start_unix": start_unix + (index * 45 * 60),
+        }
         for index in range(count)
     ]
 
@@ -46,15 +56,22 @@ def _iso(unix: int) -> str:
     return datetime.fromtimestamp(unix, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
-def _detail_body(external_id: int) -> dict[str, Any]:
+def _detail_body(activity: dict[str, Any]) -> dict[str, Any]:
+    """The detail payload for a mock activity.
+
+    ``start_date`` is the same instant the list summary reported (so the stored
+    started_at lines up); distance/elapsed_time are per-activity overrides so a
+    fixture can mimic, e.g., an uploaded GPX for duplicate-linking tests.
+    """
     return {
-        "id": external_id,
+        "id": activity["id"],
         "sport_type": "Running",
         "name": "Synced Run",
-        "start_date": "2026-08-01T09:00:00Z",
-        "distance": 10000.0,
-        "elapsed_time": 3000,
-        "moving_time": 2900,
+        # Same instant the list summary reported (the stored started_at).
+        "start_date": _iso(activity["start_unix"]),
+        "distance": activity.get("distance", 10000.0),
+        "elapsed_time": activity.get("elapsed_time", 3000),
+        "moving_time": activity.get("moving_time", 2900),
     }
 
 
@@ -74,6 +91,7 @@ class MockStrava:
     ) -> None:
         # Newest first, like the real endpoint.
         self._activities = sorted(activities, key=lambda a: a["start_unix"], reverse=True)
+        self._by_id = {activity["id"]: activity for activity in activities}
         self._second_list_call_limited = second_list_call_limited
         self.list_calls = 0
         self.list_params: list[dict[str, str]] = []
@@ -127,7 +145,7 @@ class MockStrava:
             external_id = int(path.rsplit("/", 1)[1])
             self.detail_ids.append(external_id)
             self.auth_seen.append(request.headers.get("Authorization", ""))
-            return httpx.Response(200, json=_detail_body(external_id))
+            return httpx.Response(200, json=_detail_body(self._by_id[external_id]))
         return httpx.Response(404, json={"detail": "unexpected endpoint"})
 
 
@@ -278,6 +296,39 @@ def _sync_response(env: SyncFixture, since: str | None = None) -> httpx.Response
         json=json_body,
     )
     return response
+
+
+def _gpx_twin_history() -> list[dict[str, Any]]:
+    """A feed holding one twin of the uploaded sample GPX plus ordinary runs.
+
+    The twin starts 5 minutes after the GPX and differs slightly in distance
+    (GPS smoothing) — comfortably inside the matcher's tolerances. The GPX
+    fixture starts 2024-06-01T09:00Z and covers roughly 5 km.
+    """
+    twin = {
+        "id": 701,
+        "name": "Twin of the uploaded run",
+        # 2024-06-01T09:05Z — five minutes after the GPX's start.
+        "start_unix": int(datetime(2024, 6, 1, 9, 5, tzinfo=UTC).timestamp()),
+        "distance": 5100.0,
+        "elapsed_time": 890,
+    }
+    return [
+        twin,
+        *_activities(2, int(datetime(2026, 8, 1, 9, 0, tzinfo=UTC).timestamp()), id_base=600),
+    ]
+
+
+def _upload_run_gpx(client: TestClient, token: str) -> UUID:
+    """Upload the same sample GPX the parser fixture tests use; return its uuid."""
+    data = (Path(__file__).parent / "fixtures" / "run_sample.gpx").read_bytes()
+    response = client.post(
+        "/api/v1/activities",
+        files={"file": ("run_sample.gpx", data, "application/octet-stream")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 201, response.text
+    return UUID(cast("dict[str, Any]", response.json())["id"])
 
 
 class TestSyncWalk:
@@ -623,3 +674,63 @@ class TestSyncLookback:
             json={"since": "not-a-date"},
         )
         assert response.status_code == 422
+
+
+class TestSyncDuplicateLinking:
+    """M28a cross-source duplicate linking during bulk sync.
+
+    An uploaded GPX and the same run in a provider feed have no shared
+    external id, so matching is by time + metrics. Bulk sync never prompts:
+    it links the imported row to the existing primary and reports how many.
+    """
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_gpx_twin_history()), id="twin")], indirect=True
+    )
+    def test_sync_links_the_twin_and_reports_it(
+        self, sync_env: SyncFixture, uploads_dir: Path
+    ) -> None:
+        sync_env.seed_connection()
+        gpx_id = _upload_run_gpx(sync_env.client, sync_env.token)
+
+        response = _sync_response(sync_env)
+        assert response.status_code == 200, response.text
+        body: dict[str, Any] = response.json()
+        # 3 imported (twin + two ordinary), one of them linked to the GPX.
+        assert body["imported"] == 3
+        assert body["skipped"] == 0
+        assert body["linked_duplicates"] == 1
+
+        # The GPX (already present) stays the primary; its twin is hidden.
+        feed = sync_env.client.get(
+            "/api/v1/activities?limit=50", headers={"Authorization": f"Bearer {sync_env.token}"}
+        ).json()
+        feed_ids = [item["id"] for item in cast("list[dict[str, Any]]", feed["items"])]
+        assert len(feed_ids) == 3
+
+        linked = sync_env.client.get(
+            f"/api/v1/activities/{gpx_id}/duplicates",
+            headers={"Authorization": f"Bearer {sync_env.token}"},
+        ).json()
+        twin_ids = [item["id"] for item in linked["items"]]
+        assert len(twin_ids) == 1
+
+    @pytest.mark.parametrize(
+        "sync_env", [pytest.param(MockStrava(_gpx_twin_history()), id="twin")], indirect=True
+    )
+    def test_resync_does_not_relink_or_double_import(
+        self, sync_env: SyncFixture, uploads_dir: Path
+    ) -> None:
+        sync_env.seed_connection()
+        _upload_run_gpx(sync_env.client, sync_env.token)
+
+        first = _sync_response(sync_env)
+        assert first.status_code == 200, first.text
+
+        second = _sync_response(sync_env)
+        assert second.status_code == 200, second.text
+        body: dict[str, Any] = second.json()
+        # The external-id dedup skips every row again; nothing new links.
+        assert body["imported"] == 0
+        assert body["skipped"] == 3
+        assert body["linked_duplicates"] == 0

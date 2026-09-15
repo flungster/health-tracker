@@ -15,7 +15,10 @@ class ActivityDao(IntIdUuidDao[Activity]):
     """Reads and writes of the ``activities`` table.
 
     Every lookup is scoped to a single user. Soft-deleted activities
-    (``deleted_at IS NOT NULL``) are never returned.
+    (``deleted_at IS NOT NULL``) are never returned, and linked duplicates
+    (``duplicate_of IS NOT NULL``, M28a) are excluded from the list-style
+    queries (feed, counts, dashboard aggregates): they stay reachable through
+    ``get_for_user`` and their primary's linked-duplicates list.
     """
 
     def __init__(self, session: Session) -> None:
@@ -40,7 +43,11 @@ class ActivityDao(IntIdUuidDao[Activity]):
         """The user's active activities, newest first, with pagination."""
         statement = (
             select(Activity)
-            .where(Activity.user_id == user_id, Activity.deleted_at.is_(None))
+            .where(
+                Activity.user_id == user_id,
+                Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
+            )
             .order_by(Activity.started_at.desc(), Activity.id.desc())
             .limit(limit)
             .offset(offset)
@@ -52,7 +59,11 @@ class ActivityDao(IntIdUuidDao[Activity]):
         statement = (
             select(func.count())
             .select_from(Activity)
-            .where(Activity.user_id == user_id, Activity.deleted_at.is_(None))
+            .where(
+                Activity.user_id == user_id,
+                Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
+            )
         )
         return int(self.session.scalars(statement).one())
 
@@ -77,6 +88,7 @@ class ActivityDao(IntIdUuidDao[Activity]):
         ).where(
             Activity.user_id == user_id,
             Activity.deleted_at.is_(None),
+            Activity.duplicate_of.is_(None),
             Activity.started_at >= start,
             Activity.started_at < end,
         )
@@ -99,6 +111,7 @@ class ActivityDao(IntIdUuidDao[Activity]):
             .where(
                 Activity.user_id == user_id,
                 Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
                 Activity.started_at >= start,
                 Activity.started_at < end,
             )
@@ -122,6 +135,7 @@ class ActivityDao(IntIdUuidDao[Activity]):
             .where(
                 Activity.user_id == user_id,
                 Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
                 Activity.distance_m.is_not(None),
                 Activity.started_at >= start,
                 Activity.started_at < end,
@@ -137,16 +151,51 @@ class ActivityDao(IntIdUuidDao[Activity]):
     def exists_for_provider(self, provider: str, external_activity_id: str) -> bool:
         """Whether this provider activity was imported (by any user).
 
-        Deliberately not user-scoped and not filtered on ``deleted_at``: it
-        mirrors the global partial unique index on
-        ``(provider, external_activity_id)``, which is the backstop the sync
-        loop relies on (an external id imports at most once, full stop).
+        Deliberately not user-scoped and NOT filtered on ``deleted_at``: it
+        reports "seen before, skip" for the sync loop even when the only row is
+        a soft-deleted one. (The unique index itself is live-only, M28a: an
+        overwrite may insert a fresh row on top of soft-deleted history.)
         """
         statement = select(Activity.id).where(
             Activity.provider == provider,
             Activity.external_activity_id == external_activity_id,
         )
         return self.session.scalars(statement).first() is not None
+
+    def live_primaries_in_window(
+        self, user_id: UUID, sport_type: str, start: datetime, end: datetime
+    ) -> list[Activity]:
+        """The user's live, unlinked (primary) activities of one sport in ``[start, end)``.
+
+        The candidate pool for duplicate detection (M28a): hidden duplicates are
+        excluded because their primary already represents that workout.
+        """
+        statement = (
+            select(Activity)
+            .where(
+                Activity.user_id == user_id,
+                Activity.sport_type == sport_type,
+                Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
+                Activity.started_at >= start,
+                Activity.started_at < end,
+            )
+            .order_by(Activity.started_at)
+        )
+        return list(self.session.scalars(statement).unique().all())
+
+    def list_linked_duplicates_for_user(self, user_id: UUID, primary_uuid: UUID) -> list[Activity]:
+        """The user's live activities linked as duplicates of ``primary_uuid``, oldest first."""
+        statement = (
+            select(Activity)
+            .where(
+                Activity.user_id == user_id,
+                Activity.duplicate_of == primary_uuid,
+                Activity.deleted_at.is_(None),
+            )
+            .order_by(Activity.started_at, Activity.id)
+        )
+        return list(self.session.scalars(statement).unique().all())
 
     def update(
         self,

@@ -25,10 +25,13 @@ from app.dao.activity_dao import ActivityDao
 from app.dao.provider_account_dao import ProviderAccountDao
 from app.db.unit_of_work import UnitOfWork
 from app.errors.app_error import NotFoundError
+from app.models.activity import Activity
 from app.models.provider_account import ProviderAccount
 from app.providers.base import ProviderAdapter, ProviderCredentials
 from app.providers.registry import ProviderRegistry
 from app.schemas.views.provider_views import SyncResultView
+from app.services.duplicate_detection import TIME_TOLERANCE_SECONDS, find_duplicates
+from app.services.duplicate_service import signals_from_activity
 from app.services.import_service import ImportService
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,7 @@ class ProviderSyncService:
         cursor = account.sync_cursor
         imported = 0
         skipped = 0
+        linked_duplicates = 0
         walk_complete = False
         pages = 0
         while True:
@@ -86,13 +90,22 @@ class ProviderSyncService:
                     skipped += 1
                     continue
                 parsed = adapter.fetch_activity(access_token, external_id)
-                self._import_service.import_parsed(
+                activity = self._import_service.import_parsed(
                     user_uuid,
                     parsed,
                     provider=provider,
                     external_activity_id=external_id,
                 )
                 imported += 1
+                # Cross-source duplicate (M28a): the same workout may already be
+                # in health-tracker from another source (an upload, or a later
+                # second provider). Bulk sync never prompts — it links the new
+                # row to the existing primary, which is safe because linking is
+                # reversible and reported here. Same-provider redeliveries can't
+                # reach this point (the external-id dedup above skips them).
+                linked = self._link_cross_source_duplicate(user_uuid, activity)
+                if linked:
+                    linked_duplicates += 1
             if page.next_cursor is None:
                 walk_complete = True
                 break
@@ -113,15 +126,46 @@ class ProviderSyncService:
         account.last_sync_at = datetime.now(UTC)
         self._unit_of_work.commit()
         logger.info(
-            "%s sync for user %s: %d imported, %d skipped (%d pages, floor %s)",
+            "%s sync for user %s: %d imported, %d skipped, %d linked as duplicates "
+            "(%d pages, floor %s)",
             provider,
             user_uuid,
             imported,
             skipped,
+            linked_duplicates,
             pages,
             start_date,
         )
-        return SyncResultView(imported=imported, skipped=skipped, last_sync_at=account.last_sync_at)
+        return SyncResultView(
+            imported=imported,
+            skipped=skipped,
+            linked_duplicates=linked_duplicates,
+            last_sync_at=account.last_sync_at,
+        )
+
+    def _link_cross_source_duplicate(self, user_uuid: UUID, activity: Activity) -> bool:
+        """Link a just-imported row to an existing primary when the match is clear.
+
+        Returns True (and commits) when a candidate was found — the strongest
+        one, i.e. the closest start time; existing rows always win over newly
+        imported ones (health-tracker's copy stays the one that shows).
+        """
+        window = timedelta(seconds=TIME_TOLERANCE_SECONDS)
+        pool = self._activity_dao.live_primaries_in_window(
+            user_uuid,
+            activity.sport_type,
+            activity.started_at - window,
+            activity.started_at + window,
+        )
+        pool = [candidate for candidate in pool if candidate.uuid != activity.uuid]
+        matches = find_duplicates(
+            signals_from_activity(activity), [signals_from_activity(c) for c in pool]
+        )
+        if not matches:
+            return False
+        activity.duplicate_of = pool[matches[0].index].uuid
+        self._unit_of_work.commit()
+        return True
 
     @staticmethod
     def _floor_to_unix(since: date | None, saved_floor: datetime | None) -> int | None:

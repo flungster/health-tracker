@@ -42,6 +42,13 @@ class Activity(IntIdUuidModel, TimestampMixin):
     # have no ORM model), mirroring sport_type/source_format.
     provider: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_activity_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Linked-duplicate pointer (M28a): set when this row is the hidden side of
+    # a cross-source duplicate pair; NULL = live/primary. Self-FK to the public
+    # uuid, mirroring how child tables reference activities.uuid. Depth is at
+    # most one (a duplicate cannot have duplicates) — enforced in the service.
+    duplicate_of: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("activities.uuid"), nullable=True
+    )
     original_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 

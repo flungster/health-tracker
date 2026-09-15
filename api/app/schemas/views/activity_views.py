@@ -48,6 +48,18 @@ class ActivitiesListView(BaseModel):
     units: str  # "metric" | "imperial" — display system of all unit-bearing values
 
 
+class DuplicateActivitiesView(BaseModel):
+    """A list of activities in a duplicate relationship (M28a).
+
+    Used for both directions: the candidates found for an activity, and the
+    activities linked as duplicates of a primary. ``units`` names the display
+    system unit-bearing values are expressed in ("metric" or "imperial").
+    """
+
+    items: list[ActivitySummaryView]
+    units: str  # "metric" | "imperial"
+
+
 class ActivityCountView(BaseModel):
     """How many activities fall in the period, overall and per sport type.
 

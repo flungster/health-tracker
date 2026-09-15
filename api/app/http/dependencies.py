@@ -49,6 +49,7 @@ from app.services.activity_weather_service import (
     ActivityWeatherService,
 )
 from app.services.auth_service import AuthService
+from app.services.duplicate_service import DuplicateService
 from app.services.import_service import ImportService
 from app.services.provider_config_service import ProviderConfigService
 from app.services.provider_service import ProviderService
@@ -134,6 +135,18 @@ def get_activity_weather_service(
         trackpoint_dao=ActivityTrackpointDao(session),
         profile_dao=UserProfileDao(session),
         client=client,
+    )
+
+
+def get_duplicate_service(
+    unit_of_work: UnitOfWork = Depends(get_unit_of_work),
+) -> DuplicateService:
+    """DuplicateService bound to the request unit of work."""
+    session: Session = unit_of_work.session
+    return DuplicateService(
+        unit_of_work,
+        activity_dao=ActivityDao(session),
+        profile_dao=UserProfileDao(session),
     )
 
 
