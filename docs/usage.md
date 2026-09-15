@@ -42,8 +42,11 @@ unfiltered feed.
    `.gpx`, `.tcx`, `.fit`.
 3. Optionally override the **Sport** (defaults to *Detect from file*) and add a
    **Title** (defaults to the name in the file, then the file name).
-4. Click **Import activity**. On success you land on the new activity's detail
-   page.
+4. Click **Import activity**. On success the app first checks whether this looks
+   like a workout you already have (same sport, started within half an hour,
+   similar duration or distance): if it finds a match you confirm — link the new
+   import as a duplicate of an existing activity, or keep it separate. With no
+   match you land straight on the new activity's detail page.
 
 The original file is stored on your machine in the uploads volume; health-
 tracker never sends it anywhere else.
@@ -103,6 +106,14 @@ Clicking an activity opens its detail page:
   like everything else). Re-opening the page never re-fetches. Weather is
   model/grid data (~10 km cells) for the activity's start point, not a station
   reading — good to know when judging a hot day.
+- **Linked duplicates** — when other copies of this workout are linked to it,
+  each shows in its own row (name, provider badge when one applies, date and
+  duration) with **Make this live** (the roles swap — that copy becomes the one
+  shown in your feed) and **Unlink** (it joins your feed again as its own
+  activity). An activity that is itself a linked duplicate shows a banner at the
+  top instead: it explains why it does not appear in your feed, links to its
+  primary, and offers the same two actions. Linked duplicates are hidden from
+  feeds and totals but never deleted — see [Duplicate activities](#duplicate-activities).
 - **Splits** — one table in your display unit system (per-kilometre or
   per-mile), each row showing split time, pace, and — only when recorded —
   average heart rate and cadence. (An activity shorter than a tenth of one unit
@@ -220,7 +231,10 @@ data, where it is yours to keep.
 - **Sync** — click **Sync** on a connected service to pull your activities
   from it. The first sync imports your whole history; later syncs only add
   what is new (the row shows when it was last synced). A very large history
-  may take more than one sync — just run it again.
+  may take more than one sync — just run it again. If a synced activity looks
+  like one you already have from another source (e.g. an uploaded file of the
+  same run), it is linked as a duplicate instead of appearing twice — the sync
+  message tells you how many, and nothing is ever deleted.
 - **Import from** — each connection has an import-from floor, set from the
   connected row: **All time** (the default — import everything), **30 days**,
   **90 days**, **1 year**, or a custom date. Syncs import only activities
@@ -259,6 +273,33 @@ For each provider (Strava for now):
 connections are not deleted — they are paused ("Sync paused" on the Profile
 page) until the app is added again; re-saving it resumes syncing with the
 tokens they already granted.
+
+## Duplicate activities
+
+The same workout can reach health-tracker twice without any shared identifier:
+you upload a GPX export, and the same run is later in your Strava feed — or
+(someday) two providers both carry it. health-tracker notices and keeps your
+data clean without ever guessing away an activity:
+
+- **Detection is conservative.** A match needs the same sport, a start within
+  half an hour (real instants — time zones never get in the way), and a close
+  duration or distance. When it is unsure, nothing happens.
+- **A match links; it never deletes.** One copy stays *live* (in your feed,
+  counts and dashboard); the other is a *linked duplicate*: still stored, still
+  openable by its own link, just hidden from list views. You can always look it
+  up via the live copy's **Linked duplicates** section on its detail page.
+- **You confirm single uploads.** After importing a file that looks familiar,
+  pick which existing activity it duplicates (the new copy links to the one you
+  pick — that one stays live), or keep both. Bulk provider syncs never ask: a
+  matching import is linked to the copy already in your data, and the sync
+  message reports it. Both cases are reversible — unlinking or promoting brings
+  any copy back to the feed with one click.
+- **Re-importing from the same source.** Provider syncs skip what they already
+  imported, so a re-scan never duplicates. A second upload of the same file is
+  treated like any other match: link it (one copy stays live, the other hidden)
+  or keep both. The API also offers an *overwrite* for a confirmed re-import of
+  one source's own activity — the new row replaces and soft-deletes the old,
+  which stays in storage for rollback.
 
 ## Managing activities
 

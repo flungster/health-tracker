@@ -137,14 +137,17 @@ live in the 1:1 `<sport>_activity` tables.
  | `source_format` | `text` NULL FK → source_formats.value | File/export format (`gpx` / `tcx` / `fit` / `apple_health`); NULL when fetched from a provider API. |
  | `provider` | `text` NULL FK → providers.value | Provider the activity was fetched from; NULL for file imports. |
  | `external_activity_id` | `text` NULL | The activity's id on the provider, for dedup; NULL for file imports. |
+ | `duplicate_of` | `uuid` NULL FK → activities.uuid (self) | When set, this row is a linked duplicate of the referenced (primary) activity: kept stored and reachable by its own id, excluded from feeds/summaries. At most one level deep (a linked duplicate cannot itself have duplicates — enforced by the API, not the schema). NULL = live. M28. |
  | `original_filename` | `text` NULL | As uploaded (for display). |
  | `file_path` | `text` NULL | Storage path of the original file in the uploads volume. |
  | audit | | |
 
 Indexes: `(user_id, started_at DESC)` for the feed, `(user_id, sport_type)`,
-and a partial unique index on `(provider, external_activity_id)` where both
-are non-NULL — a provider activity is imported at most once (NULL provenance
-never collides, so file imports are unaffected).
+and a partial unique index on live rows — `deleted_at IS NULL` included (M28)
+— for `(provider, external_activity_id)` where both are non-NULL: a provider
+activity is imported at most once *among live rows*, so a soft-deleted history
+can be re-imported on top of it (the overwrite path) instead of colliding
+(NULL provenance never collides, so file imports are unaffected).
 
 ### `activity_types`
 
@@ -464,6 +467,7 @@ time of writing.)
 | `20260911000002_user_timezone.sql` | Display timezone (M23a): `user_profiles.timezone text NULL` — IANA zone name for rendering dates, NULL = browser local. Display-only; no other schema touched. |
 | `20260911000003_activity_weather.sql` | Cached activity weather (M24a): `activity_weather` — at most one live snapshot per activity (`lat`/`lon` of the point measured for, `fetched_at`, hourly series in a standard-SQL `json` column); FK CASCADE to the activity. |
 | `20260913000001_ui_themes.sql` | Per-user UI theme (M25a): `ui_themes` reference table (seeded `light` / `dark` / `system`) + `user_profiles.theme text NULL` FK — display-only; no other schema touched. |
+| `20260914000001_activity_duplicates.sql` | Cross-source duplicate linking (M28a): `activities.duplicate_of uuid NULL` self-FK (linked duplicates stay stored/reachable, hidden from list-style reads; depth ≤ 1 enforced by the API). The provider dedup index is rebuilt to be soft-delete-aware (`…_live_provider_external_activity_id_key`, `deleted_at IS NULL` in the predicate) so a deleted-and-re-imported provider activity inserts fresh. |
 
 Each migration file contains both `-- migrate:up` and `-- migrate:down`
 sections; `down` actually reverses the change.

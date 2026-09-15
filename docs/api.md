@@ -408,6 +408,11 @@ Provenance fields say where it came from: `provider` names the provider that
 fetched it (`null` for file imports); `source_format` / `original_filename` are
 set only for file imports (`null` when fetched from a provider).
 
+`duplicate_of` is the public id of the activity this one is linked as a
+duplicate of, or `null` when it is live (see Activity duplicates below). A
+linked duplicate still resolves here — the link hides it from feeds and
+aggregates, not from direct access.
+
 ```json
 {
   "id": "…uuid…",
@@ -428,6 +433,7 @@ set only for file imports (`null` when fetched from a provider).
   "provider": null,
   "source_format": "gpx",
   "original_filename": "run.gpx",
+  "duplicate_of": null,
   "created_at": "2026-08-24T08:05:00Z",
   "units": "metric",
   "splits": [
@@ -621,6 +627,52 @@ client plots only the activity's own hours of that day range (start hour through
 end hour); pre-start and post-end hours exist in the snapshot for cache reuse,
 not display.
 
+### Activity duplicates (M28)
+
+The same physical workout can reach the app through different sources with no
+shared id — an uploaded GPX and the identical run in a provider feed (or, once
+a second provider ships, two providers). There is no exact match key across
+sources, so detection is **heuristic and conservative**: same sport type, start
+times within 30 minutes (compared as UTC instants), and at least one aligned
+metric — duration within the larger of 60 s or 5%, or, when both rows carry a
+distance, distances within ~10% of each other.
+
+A match never deletes anything. The model is a **link**: one activity (the
+*primary*) stays live in feeds, counts and dashboards; the other is linked as
+its *duplicate* — kept fully stored, still reachable by its own id, but hidden
+from list-style reads. Links are at most one level deep (a duplicate cannot
+itself have duplicates) and fully reversible.
+
+| Method & path | What it does |
+|---|---|
+| `GET /activities/{id}/duplicate-candidates` | The caller's **live** activities that look like the same workout as `{id}`, strongest match (closest start) first. Response `200`: the view below; an empty list means no plausible match. A suggestion for a human — the API never acts on it (bulk provider sync is the exception: it links and reports, see `POST /providers/{provider}/sync`). |
+| `GET /activities/{id}/duplicates` | The caller's activities linked as duplicates of `{id}`. Response `200`: the view below (empty when none). |
+| `POST /activities/{id}/duplicates` | Link `{id}` as a duplicate of the body's `duplicate_of`, or — with `"make_primary": true` — **swap**: `{id}` goes live and the target becomes its duplicate (the target's other duplicates, if any, are re-pointed at `{id}` so depth stays one). Response `204`. Linking is idempotent. |
+| `DELETE /activities/{id}/duplicates` | Clear the link; `{id}` becomes a live activity again. Response `204`. |
+| `POST /activities/{id}/duplicates/overwrite` | Confirmed re-import of the same workout from one source: `{id}` replaces `duplicate_of`, which is **soft-deleted** (kept for history and rollback, like any delete). Any duplicates linked to the replaced row are unlinked (they become live again) so nothing dangles off a deleted primary. Response `204`. |
+
+```json
+{                                  // both list endpoints share this view
+  "items": [                       // ActivitySummaryView rows (the feed's shape)
+    { "id": "...uuid...", "sport_type": "running", "name": "Morning run (Strava)",
+      "started_at": "2026-09-11T08:15:30Z", "duration_seconds": 900,
+      "moving_seconds": null, "distance": 5.1, "calories_kcal": null,
+      "elevation_gain": null, "heart_rate_avg_bpm": null, "provider": "strava" }
+  ],
+  "units": "metric"                // system the unit-bearing values use (M14b)
+}
+```
+
+Errors: `404 NOT_FOUND` when `{id}` (or the target) is not one of the caller's
+live activities; `422 VALIDATION_ERROR` for self-links, linking onto an activity
+that is itself a duplicate (keep depth one), unlinking a row that has no link,
+and overwrite whose replaced row is not live.
+
+**Same-source re-imports.** A second upload of the same file, or a provider
+redelivering an activity it already delivered (`(provider, external_activity_id)`), is not a *cross-source* candidate — the client confirms and uses
+`overwrite`, or keeps both rows. The provider dedup index covers **live** rows
+only, so a deleted-and-re-imported activity inserts fresh instead of colliding.
+
 ## Sports
 
 ### `GET /sports`
@@ -810,11 +862,15 @@ Response `200`:
 {
   "imported": 3,
   "skipped": 12,
+  "linked_duplicates": 1,
   "last_sync_at": "2026-08-26T12:00:00Z"
 }
 ```
 
-`imported`/`skipped` count this run only. A very large history may span
+`imported`/`skipped` count this run only. `linked_duplicates` (M28) counts
+imported rows that matched an existing activity from another source and were
+linked as duplicates of it — imported, but not shown in feeds (bulk sync never
+prompts; linking is reversible and listed under the primary). A very large history may span
 several runs: each run resumes from the stored cursor, so repeat the call
 until `imported` and `skipped` cover the rest. The access token is
 transparently refreshed (and its rotation persisted) when it has expired.

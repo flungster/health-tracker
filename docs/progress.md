@@ -5,6 +5,33 @@ end of every milestone** (see the Definition of done in `AGENTS.md`): record
 what landed, the key decisions, and the gate results, then move the milestone
 to Done in the overview.
 
+## Current status (as of 2026-09-14 — project paused, owner at a work offsite)
+
+**Last milestone: M28 (duplicate detection & linking) — Done.** Commits
+`7ddd72d` (M28a db+API), `378c382` (M28b web) and the M28c docs commit that
+contains this block. Gates green at completion: `make lint && make test` =
+**367 API / 91 web**; live stack on :9090 rebuilt and verified (migration
+`20260914000001` applied to the live db).
+
+**Nothing is mid-flight.** The working tree was clean at pause time; no
+uncommitted or half-finished work exists.
+
+**Suggested next milestones** (all already sketched — pick one, no re-research
+needed):
+1. **Library-wide duplicate scan** (M28 follow-up, small: same matcher/query,
+   loop over the user's primaries; retroactive sweep + UI) — see the M28 entry
+   in `docs/future-ideas.md`.
+2. **Weather backfill across a user's library** (parked 2026-09-13, sketched).
+3. **Activity images: Strava photo fetch** (parked 2026-09-08; completes the
+   provider half of M22's images).
+4. **User location** (parked 2026-08-30; the timezone half shipped in M23).
+5. **GPS-overlap scoring for duplicates** (M28 follow-up, heavier — best done
+   when a second provider ships).
+
+When picking the next one up: work it in `a` (db+API) / `b` (web) / `c`
+(docs + live check on :9090) parts as with M25–M28, commit per part on
+approval, keep this block current.
+
 ## Overview
 
 | Milestone | Scope | Status | Completed |
@@ -53,6 +80,9 @@ to Done in the overview.
 | M25b | Per-user theme (II): web — semantic tokens redefined under `.dark` on `<html>` (pre-paint script), `ThemeProvider` with live "system" resolution, Profile Theme card, theme-aware charts + CARTO dark map tiles; completes M25 | Done | 2026-09-13 |
 | M26 | Weather fixes: chart spans the activity's own hours (not its whole day) + temperatures follow the caller's unit system at read time | Done | 2026-09-14 |
 | M27 | Header: the user's name is now the Profile entry point (standalone nav item dropped) — unparks a parked UX idea | Done | 2026-09-14 |
+| M28a | Duplicate detection & linking (I): db `activities.duplicate_of` self-FK + soft-delete-aware provider dedup index; conservative heuristic matcher (same sport, start ≤ 30 min as UTC instants, duration or distance aligned); candidates / link / unlink / promote-swap / overwrite endpoints; bulk provider sync auto-links and reports `linked_duplicates` | Done | 2026-09-14 |
+| M28b | Duplicate detection & linking (II): web — post-upload confirm card (link to a picked primary or keep separate), Linked-duplicates section on the primary's detail page + alias banner (Make this live / Unlink), sync messages report cross-source links | Done | 2026-09-14 |
+| M28c | Duplicate detection & linking (III): docs + live check — unparks two future ideas ("Import duplicate…overwrite", "Cross-provider duplicate detection"); completes M28 | Done | 2026-09-14 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -61,6 +91,96 @@ to Done in the overview.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M28 — Duplicate detection & linking: one workout, many sources (2026-09-14)
+
+The same physical workout can reach the app through different sources with no
+shared id — an uploaded GPX and the identical run in a provider feed (file ↔
+provider already happens today; provider ↔ provider once a second adapter
+ships). M28 detects that and keeps the data clean **without ever guessing away
+an activity**: a match *links*, never deletes.
+
+### Key decisions
+- **Link, don't delete.** `activities.duplicate_of` self-FK (depth ≤ 1): the
+  *primary* stays live in feeds, counts and dashboards; a linked duplicate is
+  kept fully stored, still reachable by its own id/URL, hidden from list-style
+  reads. Everything reversible — unlink restores the row; *promote* swaps roles
+  (followers re-pointed atomically so depth stays one). Overwrite — a confirmed
+  re-import of one source's own activity — soft-deletes the replaced row like
+  any delete (rollback kept) and unlinks anything that pointed at it.
+- **Conservative matcher, UTC instants only.** Same sport type; start within 30
+  minutes (device drift and export round-trips are seconds-to-minutes; time-zone
+  strings never enter the comparison — parse-time TZ bugs are the real risk);
+  plus duration within max(60 s, 5%) *or* distance (when both rows carry one)
+  within ~10% of each other. A false positive hides an activity, so the bar is
+  "almost certainly the same workout". Pure module (`duplicate_detection.py`),
+  unit-tested in isolation.
+- **Prompts scale with blast radius.** A single upload → confirm card (strongest
+  match preselected; link or keep separate). Bulk provider sync never prompts —
+  it links to the copy already in your data and reports via the new
+  `SyncResultView.linked_duplicates` (safe precisely because linking is
+  reversible). Same-provider redelivery stays skip-by-external-id.
+- **Schema landmine defused.** The provider dedup index is now soft-delete-aware
+  (`deleted_at IS NULL` in the predicate), so delete + re-import of a provider
+  activity inserts fresh instead of violating uniqueness.
+
+### M28a — db + API core
+- Migration `20260914000001_activity_duplicates.sql` (up/down verified): the
+  self-FK + rebuilt dedup index. All list-style DAO reads (feed, count,
+  dashboard totals per period/sport/distance) now filter `duplicate_of IS NULL`;
+  direct access and the provider dedup check deliberately do not.
+- `DuplicateService`: candidates, linked list, link (idempotent), promote-swap,
+  unlink, overwrite. Routes: `GET /activities/{id}/duplicate-candidates`,
+  `GET/POST/DELETE /activities/{id}/duplicates` (`make_primary` in the body),
+  `POST …/duplicates/overwrite`. Detail view gains `duplicate_of` (used by the
+  UI to render its own link state).
+- **Sync auto-link** (`provider_sync_service`): after each imported row, a
+  ±30-min window query over live primaries + the matcher; on a match the new row
+  is linked to the existing one and committed. The sync test fixtures gained
+  distinct start times / per-activity metrics — identical shared timestamps made
+  every row in a batch "match" its neighbours (which was, against that data, the
+  matcher working correctly).
+
+**Tests:** +34 API (14 matcher unit, 18 link/swap/unlink/overwrite integration
+incl. orphan rescue on overwrite and foreign/self 422s, 2 sync auto-link with a
+mock Strava twin of the sample GPX). **Gates:** `make lint && make test` green
+(**366 API / 76 web**); migration up/down clean on the test db.
+
+### M28b — web
+- **Upload flow** (`UploadPage`): after import succeeds the page checks the new
+  activity's candidates. Matches → confirm card (radio per candidate, provider
+  badge + date; strongest preselected) with **Link as duplicate** (lands on the
+  primary's detail, where the new row appears under Linked duplicates) or **Keep
+  as separate activity** (lands on the new one). No match → straight through,
+  unchanged.
+- **Detail page**: primaries get a `LinkedDuplicatesCard` — one row per alias
+  (name link, provider badge when applicable, date/duration) with **Make this
+  live** (confirmed swap) / **Unlink**; linked duplicates get a `DuplicateNotice`
+  banner explaining why they're hidden from the feed, linking to their primary,
+  with the same two actions. Both render nothing when there's no link, so
+  ordinary pages stay clean.
+- **Connected accounts**: sync messages report the links ("Imported N new
+  activities; K matched an existing activity and were linked as a duplicate").
+
+**Tests:** +15 web (banner ×4, section ×6 incl. loading/empty, upload flow
+×5 — dropzone's async file check and label-derived accessible names handled).
+**Gates:** green (**367 API / 91 web**, +1 API test for the detail-view field).
+
+### M28c — docs + live check
+- `docs/api.md`: new *Activity duplicates* section (endpoints, view shape, error
+  table, same-source note), `duplicate_of` on the detail example, sync response
+  gains `linked_duplicates`. `docs/usage.md`: import step + detail bullets and a
+  new *Duplicate activities* section. `docs/data-model.md`: column, index note,
+  migration row. Both parked future-ideas entries are struck through and marked
+  shipped (with the still-open bits — GPS-overlap scoring, library-wide retro
+  scan, in-UI overwrite action).
+- **Live (:9090)**: migration applied to the live db; rebuilt stack. Double-
+  imported a GPX as the smoke user: candidates found (Δt = 0), link → feed shows
+  one, alias listed under the primary with `duplicate_of` on its detail; promote-
+  swap flipped roles (followers re-pointed); unlink restored both. Served bundle
+  carries all M28b strings; test rows soft-deleted afterwards.
+
+**Gates:** `make lint && make test` green (**367 API / 91 web**).
 
 ## M27 — Header: the user's name is the Profile entry point (2026-09-14)
 

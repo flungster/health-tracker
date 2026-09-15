@@ -4,44 +4,32 @@ Ideas parked here are not scheduled. Each entry records when it was parked,
 why it is interesting, and — where known — a feasibility sketch, so the idea
 can be picked up later without re-research.
 
-## Import duplicate detection with user-confirmed overwrite (parked 2026-09-09)
+## ~~Import duplicate detection with user-confirmed overwrite~~ — shipped as M28 (2026-09-14)
 
-If a newly imported activity (file upload *or* provider fetch) is an **exact
-duplicate** of one the user already has, ask: overwrite it (soft-delete the old
-row and insert the new one — chronological position is automatic, since the feed
-orders by `started_at`) or keep both? For a bulk provider sync, confirming many
-potential duplicates is a UX nightmare — there the user gets **one choice for
-the run**: ignore duplicates (today's behavior) or overwrite every match.
+Shipped with a twist the sketch had anticipated: instead of silently
+overwriting, a match **links** — `activities.duplicate_of` self-FK (depth ≤ 1).
+The primary stays live in feeds/counts/dashboards; the duplicate is kept, still
+reachable by its own id, hidden from list-style reads. Everything reversible:
+unlink or promote (swap), and overwrite (`POST /activities/{id}/duplicates/overwrite`)
+soft-deletes the replaced row like any delete — no data loss, rollback kept.
 
-Current state, per source:
-- **File uploads**: no dedup at all — re-uploading the same file (or a second
-  export of one workout) silently adds another row; duplicates accumulate in the
-  feed and pollute dashboard stats (M18).
-- **Provider sync**: always ignores — `exists_for_provider(provider,
-  external_activity_id)` skips re-delivered ids (reported as the `skipped` count).
+- **Detection** (pure module `app/services/duplicate_detection.py`): same sport,
+  start within 30 minutes as UTC instants (never wall-clock — parse-time TZ bugs
+  are the real risk), duration within max(60 s, 5%) or distance (when both rows
+  have one) within ~10%. Conservative on purpose: a false positive hides an activity.
+- **Uploads** prompt (confirm card after import, strongest match preselected);
+  **bulk provider sync never prompts** — it links and reports via the new
+  `SyncResultView.linked_duplicates` (safe: linking is reversible).
+- The provider dedup index is now **soft-delete-aware** (the schema landmine in
+  the sketch), so delete + re-import of a provider activity inserts fresh.
 
-Feasibility sketch — open questions to settle when scheduled:
-- **"Exact duplicate" for files** has no external id; candidates are a hash of
-  the original bytes (fragile across formats — GPX vs FIT exports of one workout
-  differ) or a field tuple (`sport_type`, `started_at`, `duration_seconds`,
-  `distance_m`) (format-robust, but collides on genuinely identical workouts). A
-  confirm dialog showing both activities side by side lets a human make the call.
-- **Two-phase import**: parse → check against the user's active activities → ask
-  before committing (no post-hoc cleanup).
-- **Schema landmine**: the partial unique index on `(provider, external_activity_id)`
-  is *not* soft-delete-aware (and `exists_for_provider` deliberately ignores
-  `deleted_at`) — "soft-delete + re-import" of a provider activity would violate
-  it today. Overwrite needs the index made soft-delete-aware (a migration) or an
-  in-place replacement of the row.
-- **Sync API/UI**: a per-run option, e.g. `POST /providers/{p}/sync
-  {"on_duplicate": "ignore" | "overwrite"}` (default = today's ignore); the sync
-  result view gains a `replaced` count; the control lives on the Profile
-  connection row.
-- Distinct from "Cross-provider duplicate activity detection" (heuristic matching
-  of the same workout arriving via *different* providers) — this one is exact,
-  within a source. Cross-reference both when scheduling either.
-- Bonus fit: re-importing after a parser fix (e.g. M20's Hydrow distance) becomes
-  first-class UX instead of "delete + re-upload".
+Still open from the sketch:
+- **GPS trackpoint overlap** as a confidence booster (and for surfacing "these
+  two routes match" in the UI) — trackpoint comparison is heavy; revisit when a
+  second provider ships.
+- **In-place overwrite action in the UI** — the API endpoint exists (used by a
+  confirmed re-import of one source's own activity); no button for it yet. The
+  link/keep-both flow covers the common case non-destructively today.
 
 ## ~~Per-user frontend themes, dark mode first~~ — shipped as M25 (2026-09-13)
 
@@ -99,37 +87,20 @@ everything that would consume it —
 Nothing to consume it yet, so it stays parked; the M23 profile surface (field +
 validation + context) is already there to extend.
 
-## Cross-provider duplicate activity detection (parked 2026-08-30)
+## ~~Cross-provider duplicate activity detection~~ — shipped as M28 (2026-09-14, cross-source half)
 
-When a user connects **multiple providers** (e.g. Garmin and Strava), the same
-workout can arrive from both, producing two local activities for one effort.
+The premise — "only becomes necessary once a second provider ships" — turned
+out to be wrong: file ↔ provider is *already* cross-source (an uploaded GPX of
+a run that also sits in the Strava feed), and M28 detects exactly that: same
+matcher, candidates surfaced after an upload (confirm) or auto-linked during a
+bulk sync. Provider ↔ provider will work the moment a second adapter ships — no
+new core needed, since matching lives on plain signals (sport / start instant /
+duration / distance) and the candidates query is provider-agnostic.
 
-Today only *within-provider* dedup exists: `activities` has a partial unique
-index on `(user_id, provider, external_activity_id)`, so the same external id
-from the same provider imports at most once. Across providers there is no
-dedup and no detection — both rows are kept silently.
-
-### Why it is a real problem (and not trivial)
-- No shared external id across providers. A run's Strava id and Garmin
-  activity number are unrelated.
-- Matching has to be heuristic: same sport, overlapping time window (within a
-  small tolerance), similar distance/duration. GPS overlap would be the
-  strongest signal but trackpoints are heavy to compare.
-- The right UX is "detect and let the user decide" (flag likely dupes, merge
-  or dismiss), not silent auto-merge — a wrong guess destroys data.
-
-### Sketch of how it would fit (refine when scheduled)
-- A dupe-scan that groups the user's activities by sport + time window
-  (e.g. starts within N minutes of each other, similar duration), then scores
-  pairs by distance/duration/HR similarity (GPS overlap optional).
-- Surface candidates in the UI ("These two look like the same run — keep both
-  / delete one"); user confirms, nothing is auto-deleted.
- - Only becomes necessary once a second provider (Garmin) ships; with Strava
-   alone there is nothing to cross-match.
-
-- Related: "Import duplicate detection with user-confirmed overwrite" (parked
-  2026-09-09) — exact duplicates within a single source, with an overwrite
-  option; this entry stays about cross-provider heuristic matching.
+Remaining: **GPS-overlap scoring** (strongest signal, heaviest cost — see the
+other entry) and a **library-wide dupe scan** (M28 matches at import time only;
+a retroactive "find duplicates in my history" sweep is a small add: same query,
+loop over the user's primaries).
 
 ## Weather backfill across a user's library (parked 2026-09-13)
 
