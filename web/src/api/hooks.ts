@@ -16,6 +16,7 @@ import type {
   ActivityWeatherView,
   ClientConfigView,
   ConnectUrlView,
+  DuplicateActivitiesView,
   ProfileView,
   ProviderConnectionView,
   ProvidersView,
@@ -228,6 +229,74 @@ export function useDeleteActivity() {
       void queryClient.invalidateQueries({ queryKey: ["activities"] });
       void queryClient.invalidateQueries({ queryKey: ["activity", id] });
     },
+  });
+}
+
+/** Refresh everything a link-state change touches: the feed, both activities'
+ *  detail views and their linked-duplicate lists (M28). */
+function invalidateDuplicateState(queryClient: ReturnType<typeof useQueryClient>, ids: string[]) {
+  void queryClient.invalidateQueries({ queryKey: ["activities"] });
+  for (const id of ids) {
+    void queryClient.invalidateQueries({ queryKey: ["activity", id] });
+    void queryClient.invalidateQueries({ queryKey: ["duplicates", id] });
+  }
+}
+
+/** Live activities that look like the same workout as `id` (M28), strongest
+ *  match first. A suggestion for a human — nothing acts on it automatically. */
+export function useDuplicateCandidates(id: string) {
+  return useQuery({
+    queryKey: ["duplicates", id, "candidates"],
+    enabled: id !== "",
+    queryFn: () => apiRequest<DuplicateActivitiesView>(`/api/v1/activities/${id}/duplicate-candidates`),
+  });
+}
+
+/** The activities linked as duplicates of `id` (its live feed row). */
+export function useLinkedDuplicates(id: string) {
+  return useQuery({
+    queryKey: ["duplicates", id],
+    enabled: id !== "",
+    queryFn: () => apiRequest<DuplicateActivitiesView>(`/api/v1/activities/${id}/duplicates`),
+  });
+}
+
+export type DuplicateLinkInput = {
+  duplicate_of: string;
+  make_primary?: boolean;
+};
+
+/** Link `id` as a duplicate of another activity — or, with make_primary,
+ *  promote it: the target becomes its duplicate instead (M28). */
+export function useLinkDuplicate(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DuplicateLinkInput) =>
+      apiRequest<void>(`/api/v1/activities/${id}/duplicates`, { method: "POST", json: input }),
+    onSuccess: (_data, input) => invalidateDuplicateState(queryClient, [id, input.duplicate_of]),
+  });
+}
+
+/** Clear the link; `id` becomes a live activity again (M28). */
+export function useUnlinkDuplicate(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiRequest<void>(`/api/v1/activities/${id}/duplicates`, { method: "DELETE" }),
+    onSuccess: () => invalidateDuplicateState(queryClient, [id]),
+  });
+}
+
+/** Confirmed re-import of the same workout from one source: `id` replaces
+ *  duplicate_of, which is soft-deleted (M28). */
+export function useOverwriteDuplicate(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (duplicate_of: string) =>
+      apiRequest<void>(`/api/v1/activities/${id}/duplicates/overwrite`, {
+        method: "POST",
+        json: { duplicate_of },
+      }),
+    onSuccess: (_data, duplicateOf) => invalidateDuplicateState(queryClient, [id, duplicateOf]),
   });
 }
 

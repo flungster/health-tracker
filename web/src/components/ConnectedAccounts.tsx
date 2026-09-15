@@ -11,10 +11,24 @@ import {
   useSyncProvider,
   useUpdateProviderConnection,
 } from "../api/hooks";
-import type { ProviderConnectionView, ProviderInfoView } from "../api/types";
+import type { ProviderConnectionView, ProviderInfoView, SyncResultView } from "../api/types";
 import { dateDaysAgo, formatActivityDate } from "../format";
 import { useTimezone } from "../timezone/context";
 import { Card, ErrorNote, Spinner } from "./Ui";
+
+/** One-line sync result, including M28 cross-source links: imported rows that
+ *  matched an existing activity from another source are linked, not shown. */
+function describeSync(data: SyncResultView, verb: string): string {
+  if (data.imported === 0) {
+    return data.linked_duplicates > 0 ? "Nothing new to import." : "All up to date.";
+  }
+  const base = `${verb} ${data.imported} new activit${data.imported === 1 ? "y" : "ies"}`;
+  if (data.linked_duplicates === 0) {
+    return `${base}.`;
+  }
+  const linked = data.linked_duplicates === 1 ? "was" : "were";
+  return `${base}; ${data.linked_duplicates} matched an existing activity and ${linked} linked as a duplicate.`;
+}
 
 export default function ConnectedAccounts() {
   const { data, isPending, isError, error } = useProviders();
@@ -148,12 +162,7 @@ function ProviderRow({ provider }: { provider: ProviderInfoView }) {
               sync.mutate(
                 { provider: provider.value },
                 {
-                  onSuccess: (data) =>
-                    setSyncMessage(
-                      data.imported > 0
-                        ? `Imported ${data.imported} new activit${data.imported === 1 ? "y" : "ies"}.`
-                        : "All up to date.",
-                    ),
+                  onSuccess: (data) => setSyncMessage(describeSync(data, "Imported")),
                 },
               );
             }}
@@ -208,11 +217,7 @@ function ProviderRow({ provider }: { provider: ProviderInfoView }) {
                     { provider: provider.value, since: rescanDate },
                     {
                       onSuccess: (data) => {
-                        setSyncMessage(
-                          data.imported > 0
-                            ? `Rescan imported ${data.imported} new activit${data.imported === 1 ? "y" : "ies"}.`
-                            : "Nothing new since that date.",
-                        );
+                        setSyncMessage(describeSync(data, "Rescan imported"));
                         setRescanOpen(false);
                       },
                     },

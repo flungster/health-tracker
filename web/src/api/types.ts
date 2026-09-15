@@ -156,6 +156,8 @@ export type ActivityDetailView = {
   provider: string | null;
   source_format: string | null; // e.g. "gpx"; null when fetched from a provider
   original_filename: string | null; // uploaded file name; null for provider fetches
+  /** Set when this row is a linked duplicate of that activity (M28). */
+  duplicate_of: string | null;
   created_at: string;
   units: Units; // display system of all unit-bearing values in this response
   /** Splits already filtered to `units` (km rows for metric, mi rows otherwise). */
@@ -264,5 +266,15 @@ export type ClientConfigView = {
 export type SyncResultView = {
   imported: number;
   skipped: number;
+  /** Imported rows that matched an existing activity from another source and
+   *  were linked as duplicates of it (M28): imported, but not in the feed. */
+  linked_duplicates: number;
   last_sync_at: string;
+};
+
+/** A list of activities in a duplicate relationship (M28): candidates found
+ *  for an activity, or the activities linked as duplicates of a primary. */
+export type DuplicateActivitiesView = {
+  items: ActivitySummaryView[];
+  units: Units;
 };

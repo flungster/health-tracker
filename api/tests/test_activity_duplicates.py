@@ -126,6 +126,26 @@ class TestLinkAndUnlink:
         detail = client.get(f"/api/v1/activities/{second_id}", headers=_auth(token))
         assert detail.status_code == 200, detail.text
 
+    def test_detail_view_exposes_the_link(
+        self, client: TestClient, uploads_dir: Path
+    ) -> None:
+        token = _register(client, "dups-detail-link@example.com")
+        first_id = _import(client, token)
+        second_id = _import(client, token)
+
+        # Live rows carry no link; after linking, the alias points at its primary.
+        assert (
+            client.get(f"/api/v1/activities/{first_id}", headers=_auth(token)).json()[
+                "duplicate_of"
+            ]
+            is None
+        )
+
+        _link(client, token, second_id, first_id)
+
+        detail = client.get(f"/api/v1/activities/{second_id}", headers=_auth(token)).json()
+        assert detail["duplicate_of"] == first_id
+
     def test_linked_duplicates_listed_on_the_primary(
         self, client: TestClient, uploads_dir: Path
     ) -> None:

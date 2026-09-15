@@ -6,6 +6,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useActivity, useDeleteActivity, useTrackpoints, useUpdateActivity } from "../api/hooks";
 import ActivityImages from "../components/ActivityImages";
 import { HeartRateChart, HrZonesChart } from "../components/Charts";
+import DuplicateNotice from "../components/DuplicateNotice";
+import LinkedDuplicatesCard from "../components/LinkedDuplicatesCard";
 import ProviderBadge from "../components/ProviderBadge";
 import RouteMap from "../components/RouteMap";
 import SportBadge from "../components/SportBadge";
@@ -180,6 +182,12 @@ export default function ActivityDetailPage() {
       </div>
 
       <StatGrid stats={stats} />
+
+      {activity.duplicate_of !== null ? (
+        <DuplicateNotice activityId={activityId} primaryId={activity.duplicate_of} />
+      ) : (
+        <LinkedDuplicatesCard activityId={activityId} />
+      )}
 
       <Card className="p-5">
         <h2 className="mb-4 text-base font-semibold text-ink">Photos</h2>

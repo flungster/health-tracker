@@ -314,6 +314,7 @@ class ActivityMapper:
             provider=activity.provider,
             source_format=activity.source_format,
             original_filename=activity.original_filename,
+            duplicate_of=activity.duplicate_of,
             created_at=activity.created_at,
             units=units.value,
             splits=[ActivityMapper.to_split_view(split) for split in splits],

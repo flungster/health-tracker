@@ -211,6 +211,7 @@ class ActivityDetailView(BaseModel):
     provider: str | None  # e.g. "strava"; null for file imports
     source_format: str | None  # e.g. "gpx"; null when fetched from a provider
     original_filename: str | None  # the uploaded file name; null for provider fetches
+    duplicate_of: UUID | None  # set when this row is a linked duplicate of that activity
     created_at: datetime
     units: str  # "metric" | "imperial" — display system of all unit-bearing values
     splits: list[SplitView]

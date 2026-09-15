@@ -1,14 +1,27 @@
-/** Import a GPX/TCX/FIT file, with optional sport and name overrides. */
+/** Import a GPX/TCX/FIT file, with optional sport and name overrides.
 
-import { useState } from "react";
+After the import succeeds, the app checks whether this looks like a workout
+you already have (M28): when it does, you confirm — link the new row as a
+duplicate of an existing one (which stays live) or keep it separate. */
+
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { useImportActivity, useSports } from "../api/hooks";
+import {
+  useDuplicateCandidates,
+  useImportActivity,
+  useLinkDuplicate,
+  useSports,
+} from "../api/hooks";
+import ProviderBadge from "../components/ProviderBadge";
 import UploadZone from "../components/UploadZone";
 import { Card, ErrorNote } from "../components/Ui";
+import { formatActivityDate, formatClock } from "../format";
+import { useTimezone } from "../timezone/context";
 
 export default function UploadPage() {
   const navigate = useNavigate();
+  const { timeZone } = useTimezone();
   const { data: sportsData } = useSports();
   const importMutation = useImportActivity();
 
@@ -16,7 +29,22 @@ export default function UploadPage() {
   const [sportType, setSportType] = useState<string>("");
   const [name, setName] = useState<string>("");
 
+  // The just-imported activity while its duplicate candidates are checked.
+  const [importedId, setImportedId] = useState<string | null>(null);
+  const [selectedPrimary, setSelectedPrimary] = useState<string>("");
+
+  const { data: candidatesData } = useDuplicateCandidates(importedId ?? "");
+  const linkMutation = useLinkDuplicate(importedId ?? "");
+
   const sports = sportsData?.sports ?? [];
+  const candidates = importedId !== null ? (candidatesData?.items ?? []) : [];
+
+  // No plausible match: straight through to the new activity's detail page.
+  useEffect(() => {
+    if (importedId !== null && candidatesData !== undefined && candidatesData.items.length === 0) {
+      navigate(`/activities/${importedId}`);
+    }
+  }, [importedId, candidatesData, navigate]);
 
   function handleFileSelected(selected: File | null) {
     setFile(selected);
@@ -34,11 +62,100 @@ export default function UploadPage() {
         sportType: sportType === "" ? null : sportType,
         name: name.trim() === "" ? null : name.trim(),
       },
-      {
-        onSuccess: (activity) => {
-          navigate(`/activities/${activity.id}`);
-        },
-      },
+      { onSuccess: (activity) => setImportedId(activity.id) },
+    );
+  }
+
+  function handleLinkAsDuplicate() {
+    const primary = selectedPrimary !== "" ? selectedPrimary : candidates[0]?.id;
+    if (importedId === null || primary === undefined) {
+      return;
+    }
+    linkMutation.mutate(
+      { duplicate_of: primary },
+      // Land on the live activity; the new row shows up under its linked duplicates.
+      { onSuccess: () => navigate(`/activities/${primary}`) },
+    );
+  }
+
+  function handleKeepSeparate() {
+    if (importedId !== null) {
+      navigate(`/activities/${importedId}`);
+    }
+  }
+
+  // The just-imported row is being checked for duplicates.
+  if (importedId !== null && candidates.length === 0) {
+    return (
+      <div className="mx-auto max-w-xl space-y-6">
+        <h1 className="text-xl font-bold text-ink">Upload activity</h1>
+        <Card className="p-5 text-sm text-ink-muted">Import complete — checking for duplicates…</Card>
+      </div>
+    );
+  }
+
+  if (importedId !== null && candidates.length > 0) {
+    return (
+      <div className="mx-auto max-w-xl space-y-6">
+        <h1 className="text-xl font-bold text-ink">Upload activity</h1>
+        <Card className="space-y-4 p-5">
+          <p className="text-sm text-ink-muted">
+            This looks like a workout you already have. Pick the one it duplicates — that activity stays live,
+            and this import is kept as a linked duplicate (hidden from the feed, still reachable). Or keep it
+            separate if they are different efforts.
+          </p>
+
+          <div className="space-y-2" role="radiogroup" aria-label="Existing activity this duplicates">
+            {candidates.map((candidate) => (
+              <label
+                key={candidate.id}
+                className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm transition-colors ${
+                  (selectedPrimary !== "" ? selectedPrimary : candidates[0]?.id) === candidate.id
+                    ? "border-accent bg-surface"
+                    : "border-line hover:border-ink-faint"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="duplicate-primary"
+                  value={candidate.id}
+                  checked={(selectedPrimary !== "" ? selectedPrimary : candidates[0]?.id) === candidate.id}
+                  onChange={() => setSelectedPrimary(candidate.id)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-ink">{candidate.name}</span>
+                  <span className="mt-0.5 flex items-center gap-2 text-xs text-ink-muted">
+                    <ProviderBadge provider={candidate.provider} />
+                    {formatActivityDate(candidate.started_at, timeZone)} ·{" "}
+                    {formatClock(candidate.started_at, timeZone)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLinkAsDuplicate}
+              disabled={linkMutation.isPending || candidates.length === 0}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-dark disabled:opacity-60"
+            >
+              {linkMutation.isPending ? "Linking…" : "Link as duplicate"}
+            </button>
+            <button
+              type="button"
+              onClick={handleKeepSeparate}
+              disabled={linkMutation.isPending}
+              className="rounded-md border border-line px-4 py-2 text-sm font-semibold text-ink-muted transition-colors hover:bg-line/40 hover:text-ink disabled:opacity-60"
+            >
+              Keep as separate activity
+            </button>
+          </div>
+
+          {linkMutation.isError && <ErrorNote message={linkMutation.error.message} />}
+        </Card>
+      </div>
     );
   }
 
@@ -100,9 +217,7 @@ export default function UploadPage() {
             {importMutation.isPending ? "Importing…" : "Import activity"}
           </button>
 
-          {importMutation.isError && (
-            <ErrorNote message={importMutation.error.message} />
-          )}
+          {importMutation.isError && <ErrorNote message={importMutation.error.message} />}
         </Card>
       )}
     </div>
