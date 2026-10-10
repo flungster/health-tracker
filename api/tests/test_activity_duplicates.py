@@ -61,6 +61,30 @@ def _linked_of(client: TestClient, token: str, primary_id: str) -> list[str]:
     return [item["id"] for item in body["items"]]
 
 
+def _import_file(client: TestClient, token: str, filename: str) -> str:
+    """Upload a named fixture file; returns the new activity's public uuid."""
+    data = (Path(__file__).parent / "fixtures" / filename).read_bytes()
+    response = client.post(
+        "/api/v1/activities",
+        files={"file": (filename, data, "application/octet-stream")},
+        headers=_auth(token),
+    )
+    assert response.status_code == 201, response.text
+    return cast("dict[str, Any]", response.json())["id"]
+
+
+def _scan(client: TestClient, token: str) -> dict[str, Any]:
+    """Run the library-wide duplicate scan; returns its response body."""
+    response = client.post("/api/v1/activities/duplicate-scan", headers=_auth(token))
+    assert response.status_code == 200, response.text
+    return cast("dict[str, Any]", response.json())
+
+
+def _group_ids(body: dict[str, Any]) -> list[list[str]]:
+    """The scan body's groups as lists of activity ids (member order preserved)."""
+    return [[item["id"] for item in group["activities"]] for group in body["groups"]]
+
+
 class TestDuplicateCandidates:
     def test_double_upload_is_a_candidate_of_each_other(
         self, client: TestClient, uploads_dir: Path
@@ -126,9 +150,7 @@ class TestLinkAndUnlink:
         detail = client.get(f"/api/v1/activities/{second_id}", headers=_auth(token))
         assert detail.status_code == 200, detail.text
 
-    def test_detail_view_exposes_the_link(
-        self, client: TestClient, uploads_dir: Path
-    ) -> None:
+    def test_detail_view_exposes_the_link(self, client: TestClient, uploads_dir: Path) -> None:
         token = _register(client, "dups-detail-link@example.com")
         first_id = _import(client, token)
         second_id = _import(client, token)
@@ -353,3 +375,98 @@ class TestOverwrite:
             headers=_auth(token),
         )
         assert response.status_code == 404, response.text
+
+
+class TestLibraryScan:
+    """The retroactive library-wide sweep (M29a): find duplicate groups in history.
+
+    Reuses M28's matcher across the caller's live primaries; read-only (it reports,
+    a human links). Linked duplicates and other users' rows are out of scope.
+    """
+
+    def test_empty_library_returns_no_groups(self, client: TestClient) -> None:
+        token = _register(client, "scan-empty@example.com")
+
+        body = _scan(client, token)
+        assert body["groups"] == []
+        assert body["units"] in ("metric", "imperial")
+
+    def test_double_upload_is_one_group_in_start_order(
+        self, client: TestClient, uploads_dir: Path
+    ) -> None:
+        token = _register(client, "scan-double@example.com")
+        first_id = _import(client, token)
+        second_id = _import(client, token)
+
+        body = _scan(client, token)
+        assert body["units"] == "metric"  # a fresh user has no imperial profile
+        groups = _group_ids(body)
+        assert len(groups) == 1
+        # Identical imports share a start time, so the earlier-inserted row (the lower
+        # id) is first — the natural primary to keep.
+        assert groups[0] == [first_id, second_id]
+
+    def test_different_sports_are_not_grouped(self, client: TestClient, uploads_dir: Path) -> None:
+        token = _register(client, "scan-sports@example.com")
+        _import_file(client, token, "run_sample.gpx")  # a run (Jun 1)
+        _import_file(client, token, "cycle_sample.tcx")  # a ride (Jun 15)
+
+        body = _scan(client, token)
+        # A run and a ride never match — different sport (and far apart in time).
+        assert body["groups"] == []
+
+    def test_linked_duplicates_are_excluded_from_the_scan(
+        self, client: TestClient, uploads_dir: Path
+    ) -> None:
+        token = _register(client, "scan-linked@example.com")
+        first_id = _import(client, token)
+        second_id = _import(client, token)
+        _link(client, token, second_id, first_id)  # hide the twin
+
+        body = _scan(client, token)
+        # Only one live primary remains for that workout: nothing left to pair with.
+        assert body["groups"] == []
+
+    def test_scan_is_scoped_to_the_caller(self, client: TestClient, uploads_dir: Path) -> None:
+        owner = _register(client, "scan-scope-owner@example.com")
+        other = _register(client, "scan-scope-other@example.com")
+        _import_file(client, owner, "run_sample.gpx")  # two identical workouts...
+        _import_file(client, other, "run_sample.gpx")  # ...but owned by different users
+
+        # Each user has a single live primary, and the other's row is never considered:
+        # neither scan can form a group. (If scoping leaked, owner's scan would pair them.)
+        assert _scan(client, owner)["groups"] == []
+        assert _scan(client, other)["groups"] == []
+
+    def test_scan_reports_multiple_groups_ordered_by_earliest_start(
+        self, client: TestClient, uploads_dir: Path
+    ) -> None:
+        token = _register(client, "scan-multi@example.com")
+        run_a = _import_file(client, token, "run_sample.gpx")  # Jun 1
+        run_b = _import_file(client, token, "run_sample.gpx")  # Jun 1 twin
+        ride_a = _import_file(client, token, "cycle_sample.tcx")  # Jun 15
+        ride_b = _import_file(client, token, "cycle_sample.tcx")  # Jun 15 twin
+
+        body = _scan(client, token)
+        groups = _group_ids(body)
+        # Two clusters: the running pair (earlier start, so first), then the cycling pair.
+        assert groups == [[run_a, run_b], [ride_a, ride_b]]
+
+    def test_scan_does_not_link_anything(self, client: TestClient, uploads_dir: Path) -> None:
+        token = _register(client, "scan-readonly@example.com")
+        first_id = _import(client, token)
+        second_id = _import(client, token)
+
+        body = _scan(client, token)
+        assert len(body["groups"]) == 1
+
+        # The scan is a report, not an action: both rows are still live primaries and
+        # nothing was linked (detail views carry no duplicate_of, feed shows both).
+        assert _feed_ids(client, token) == {first_id, second_id}
+        for activity_id in (first_id, second_id):
+            detail = client.get(f"/api/v1/activities/{activity_id}", headers=_auth(token)).json()
+            assert detail["duplicate_of"] is None
+
+    def test_scan_requires_authentication(self, client: TestClient) -> None:
+        response = client.post("/api/v1/activities/duplicate-scan")
+        assert response.status_code == 401

@@ -17,6 +17,7 @@ service owns the user-scoped query that supplies candidates and the invariants:
 * everything the user owns, nothing else.
 """
 
+from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
@@ -30,7 +31,20 @@ from app.services.duplicate_detection import (
     TIME_TOLERANCE_SECONDS,
     DuplicateSignals,
     find_duplicates,
+    group_duplicates,
 )
+
+
+@dataclass(frozen=True)
+class DuplicateGroup:
+    """One cluster of live primaries the scanner thinks is a single workout (M29a).
+
+    Members are in ascending start-time order; the first is the natural primary to
+    keep. The group has at least two members (a row that matches nothing is not a
+    duplicate and never appears). Read-only: the caller links members with :meth:`link`.
+    """
+
+    activities: tuple[Activity, ...]
 
 
 def signals_from_activity(activity: Activity) -> DuplicateSignals:
@@ -90,6 +104,24 @@ class DuplicateService:
             signals_from_activity(activity), [signals_from_activity(c) for c in pool]
         )
         return [pool[match.index] for match in matches], self._units_for(user_id)
+
+    def scan_library(self, user_id: UUID) -> tuple[list[DuplicateGroup], UnitSystem]:
+        """Retroactive sweep over the caller's whole library for duplicate groups (M29a).
+
+        Finds every cluster of live primaries that look like the same workout,
+        reusing M28a's conservative matcher across all of the user's rows (the DAO
+        returns them ordered by sport then start, which :func:`group_duplicates`
+        expects). Read-only: it reports likely duplicates for a human to confirm —
+        nothing is linked, and the existing ``POST .../duplicates`` makes a choice
+        stick. A user with fewer than two live primaries always gets no groups.
+        """
+        primaries = self._activity_dao.list_live_primaries_for_user(user_id)
+        signals = [signals_from_activity(activity) for activity in primaries]
+        groups = [
+            DuplicateGroup(activities=tuple(primaries[index] for index in indices))
+            for indices in group_duplicates(signals)
+        ]
+        return groups, self._units_for(user_id)
 
     def list_linked_duplicates(
         self, user_id: UUID, primary_uuid: UUID

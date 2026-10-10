@@ -90,3 +90,87 @@ def find_duplicates(
         if duration_ok or distance_ok:
             matches.append(DuplicateCandidate(index=index, delta_seconds=delta))
     return sorted(matches, key=lambda match: (match.delta_seconds, match.index))
+
+
+def group_duplicates(primaries: list[DuplicateSignals]) -> list[list[int]]:
+    """Group ``primaries`` into clusters that look like the same workout (M29a).
+
+    The library-wide retroactive half of M28: instead of matching one new row
+    against the rest, it finds every duplicate cluster among a set of rows. It
+    reuses :func:`find_duplicates` as the pairwise rule — for each row it asks,
+    "which *later* rows of the same sport match me?" — and merges transitive
+    matches (A~B and B~C are one cluster) with a union-find.
+
+    ``primaries`` must be ordered so that same-sport entries are contiguous and
+    in start-time order (that is the shape ``ActivityDao.list_live_primaries_for_user``
+    returns). Each pair of rows is compared exactly once (an anchor only looks at
+    later neighbours), so the result does not depend on scan order.
+
+    Returns groups as lists of indices into ``primaries``: every group has at
+    least two members, members are in ascending index (i.e. start-time) order, and
+    the groups themselves are ordered by each group's earliest member. Rows that
+    match nothing (singletons) are omitted — they are not duplicates of anything.
+
+    Pure and deterministic, like :func:`find_duplicates`: no users, sessions or
+    providers. The service owns the query that supplies the ordered rows and what
+    to do with each group (a human confirms before linking, so nothing auto-acts).
+    """
+    count = len(primaries)
+
+    # Union-find over row indices. The smaller (earlier) index always becomes the
+    # root of its cluster, so a group's key is deterministically its first member.
+    roots = list(range(count))
+
+    def find(node: int) -> int:
+        # Path halving: walk to the root, pulling each node up toward it.
+        while roots[node] != node:
+            roots[node] = roots[roots[node]]
+            node = roots[node]
+        return node
+
+    def union(a: int, b: int) -> None:
+        root_a, root_b = find(a), find(b)
+        if root_a == root_b:
+            return
+        # The smaller index always wins, so the group key is its earliest member.
+        if root_b < root_a:
+            roots[root_a] = root_b
+        else:
+            roots[root_b] = root_a
+
+    run_start = 0
+    while run_start < count:
+        sport_type = primaries[run_start].sport_type
+        # End of the contiguous same-sport run starting at ``run_start``.
+        run_end = run_start
+        while run_end < count and primaries[run_end].sport_type == sport_type:
+            run_end += 1
+
+        for anchor in range(run_start, run_end):
+            # Candidate window: the later same-sport rows that started within the
+            # tolerance. The run is start-ordered, so once a follower starts too far
+            # ahead every later one does as well — stop there.
+            anchor_start = primaries[anchor].started_at_utc_seconds
+            candidate_indices: list[int] = []
+            for follower in range(anchor + 1, run_end):
+                gap = primaries[follower].started_at_utc_seconds - anchor_start
+                if gap > TIME_TOLERANCE_SECONDS:
+                    break
+                candidate_indices.append(follower)
+
+            matches = find_duplicates(primaries[anchor], [primaries[f] for f in candidate_indices])
+            # ``match.index`` indexes the (follower) list just built, whose order is
+            # candidate_indices — so map it back to the row's global index.
+            for match in matches:
+                union(anchor, candidate_indices[match.index])
+
+        run_start = run_end
+
+    members: dict[int, list[int]] = {}
+    for index in range(count):
+        root = find(index)
+        members.setdefault(root, []).append(index)
+
+    groups: list[list[int]] = [indices for indices in members.values() if len(indices) >= 2]
+    groups.sort(key=lambda group: (primaries[group[0]].started_at_utc_seconds, group[0]))
+    return groups

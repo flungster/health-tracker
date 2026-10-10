@@ -17,10 +17,42 @@ from app.schemas.requests.activity_requests import (
     DuplicateLinkRequest,
     DuplicateOverwriteRequest,
 )
-from app.schemas.views.activity_views import DuplicateActivitiesView
-from app.services.duplicate_service import DuplicateService
+from app.schemas.units import UnitSystem
+from app.schemas.views.activity_views import (
+    ActivitySummaryView,
+    DuplicateActivitiesView,
+    DuplicateGroupView,
+    DuplicateScanView,
+)
+from app.services.duplicate_service import DuplicateGroup, DuplicateService
 
 router = APIRouter(prefix="/api/v1", tags=["activities"])
+
+
+@router.post("/activities/duplicate-scan", response_model=DuplicateScanView)
+def scan_library_duplicates(
+    duplicate_service: DuplicateService = Depends(get_duplicate_service),
+    current_user: User = Depends(get_current_user),
+) -> DuplicateScanView:
+    """Retroactive sweep over the caller's whole library for duplicate groups.
+
+    Reuses M28a's conservative matcher across all live primaries (same sport, start
+    within 30 minutes, duration or distance aligned). Read-only: it reports likely
+    duplicates — a human picks one to keep and links the rest with this activity's
+    ``POST .../duplicates``. POST (not GET) because it runs the matcher over an
+    entire library rather than a single lookup. An empty ``groups`` list is the
+    normal result for a clean library (no likely duplicates).
+    """
+    groups, units = duplicate_service.scan_library(current_user.uuid)
+    return DuplicateScanView(
+        groups=[DuplicateGroupView(activities=_summary_views(group, units)) for group in groups],
+        units=units.value,
+    )
+
+
+def _summary_views(group: DuplicateGroup, units: UnitSystem) -> list[ActivitySummaryView]:
+    """The summary views of one scan group, in the caller's display units."""
+    return [ActivityMapper.to_summary_view(activity, units) for activity in group.activities]
 
 
 @router.get(

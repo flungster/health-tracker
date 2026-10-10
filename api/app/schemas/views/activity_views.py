@@ -71,6 +71,31 @@ class ActivityCountView(BaseModel):
     by_sport_type: dict[str, int]
 
 
+class DuplicateGroupView(BaseModel):
+    """One cluster of live primaries the scanner thinks is a single workout (M29a).
+
+    ``activities`` has at least two members, in ascending start-time order (the
+    first is the natural primary to keep). Read-only: nothing here is linked — a
+    human picks one and links the rest with ``POST .../duplicates``.
+    """
+
+    activities: list[ActivitySummaryView]
+
+
+class DuplicateScanView(BaseModel):
+    """Result of a library-wide duplicate scan (M29a).
+
+    ``groups`` lists every set of >= 2 live primaries that look like the same
+    workout (M28a's conservative matcher, applied retroactively across the whole
+    library), ordered by each group's earliest start. An empty list means no likely
+    duplicates were found — the common case for a clean library. ``units`` names the
+    display system unit-bearing values are expressed in ("metric" or "imperial").
+    """
+
+    groups: list[DuplicateGroupView]  # ordered by each group's earliest start
+    units: str  # "metric" | "imperial" — display system of all unit-bearing values
+
+
 class DistanceTrendPointView(BaseModel):
     """One bucket of the distance-over-time trend.
 

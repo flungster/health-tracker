@@ -184,6 +184,24 @@ class ActivityDao(IntIdUuidDao[Activity]):
         )
         return list(self.session.scalars(statement).unique().all())
 
+    def list_live_primaries_for_user(self, user_id: UUID) -> list[Activity]:
+        """All of the user's live (not deleted, unlinked) primaries — every row a feed would show.
+
+        The pool for the library-wide duplicate scan (M29a). Ordered by sport type
+        then start time so the scanner can walk each sport's rows in chronological
+        order; this is exactly ``list_for_user`` without its pagination.
+        """
+        statement = (
+            select(Activity)
+            .where(
+                Activity.user_id == user_id,
+                Activity.deleted_at.is_(None),
+                Activity.duplicate_of.is_(None),
+            )
+            .order_by(Activity.sport_type, Activity.started_at, Activity.id)
+        )
+        return list(self.session.scalars(statement).unique().all())
+
     def list_linked_duplicates_for_user(self, user_id: UUID, primary_uuid: UUID) -> list[Activity]:
         """The user's live activities linked as duplicates of ``primary_uuid``, oldest first."""
         statement = (
