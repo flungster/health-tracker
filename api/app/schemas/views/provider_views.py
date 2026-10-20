@@ -4,9 +4,9 @@ Views are the only representation of models that leaves the API. In
 particular, no view ever carries OAuth tokens.
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel
+
+from app.schemas.views.utc_datetime import UtcDateTime
 
 
 class ProviderInfoView(BaseModel):
@@ -39,11 +39,11 @@ class ProviderConnectionView(BaseModel):
     provider: str
     external_user_id: str
     display_name: str | None
-    connected_at: datetime
-    last_sync_at: datetime | None
+    connected_at: UtcDateTime
+    last_sync_at: UtcDateTime | None
     # The user's import-from floor (UTC midnight); null = import everything.
     # A user preference: it survives reconnects, unlike the sync cursor.
-    sync_since: datetime | None
+    sync_since: UtcDateTime | None
 
 
 class SyncResultView(BaseModel):
@@ -61,7 +61,7 @@ class SyncResultView(BaseModel):
     # Rows that matched an existing activity from another source and were
     # linked as duplicates of it (M28a): imported, but not shown in feeds.
     linked_duplicates: int = 0
-    last_sync_at: datetime
+    last_sync_at: UtcDateTime
 
 
 class ClientConfigView(BaseModel):

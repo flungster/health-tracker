@@ -8,10 +8,11 @@ API (see ``app.schemas.units``). Universal values keep their unit in the name:
 calories are always kcal, power is always watts.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.views.utc_datetime import UtcDateTime
 
 
 class ActivitySummaryView(BaseModel):
@@ -24,7 +25,7 @@ class ActivitySummaryView(BaseModel):
     id: UUID
     sport_type: str
     name: str
-    started_at: datetime
+    started_at: UtcDateTime
     duration_seconds: int
     moving_seconds: int | None
     distance: float | None
@@ -106,7 +107,7 @@ class DistanceTrendPointView(BaseModel):
     means the period has no distance data at all (the card is null then).
     """
 
-    start: datetime
+    start: UtcDateTime
     value: float
 
 
@@ -222,8 +223,8 @@ class ActivityDetailView(BaseModel):
     sport_type: str
     name: str
     description: str | None
-    started_at: datetime
-    ended_at: datetime
+    started_at: UtcDateTime
+    ended_at: UtcDateTime
     duration_seconds: int
     moving_seconds: int | None
     distance: float | None  # meters when units is metric, miles otherwise
@@ -237,7 +238,7 @@ class ActivityDetailView(BaseModel):
     source_format: str | None  # e.g. "gpx"; null when fetched from a provider
     original_filename: str | None  # the uploaded file name; null for provider fetches
     duplicate_of: UUID | None  # set when this row is a linked duplicate of that activity
-    created_at: datetime
+    created_at: UtcDateTime
     units: str  # "metric" | "imperial" — display system of all unit-bearing values
     splits: list[SplitView]
     heart_rate_zones: HrZoneView | None
@@ -256,7 +257,7 @@ class TrackpointView(BaseModel):
     """
 
     seq: int
-    recorded_at: datetime | None
+    recorded_at: UtcDateTime | None
     lat: float | None
     lon: float | None
     altitude: float | None

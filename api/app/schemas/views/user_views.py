@@ -3,10 +3,12 @@
 Views are the only representation of models that leaves the API.
 """
 
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.views.utc_datetime import UtcDateTime
 
 
 class UserView(BaseModel):
@@ -16,7 +18,7 @@ class UserView(BaseModel):
     first_name: str
     last_name: str
     email: str
-    created_at: datetime
+    created_at: UtcDateTime
 
 
 class AuthResponseView(BaseModel):

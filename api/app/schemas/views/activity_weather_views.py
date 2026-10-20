@@ -6,10 +6,11 @@ an em dash for a missing field. Attribution (Open-Meteo, CC BY 4.0) is part
 of the UI, not a field here.
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.views.utc_datetime import UtcDateTime
 
 
 class WeatherPointView(BaseModel):
@@ -20,7 +21,7 @@ class WeatherPointView(BaseModel):
     imperial), converted at read time from the stored Celsius snapshot (M14b).
     """
 
-    time: datetime  # UTC hour the value applies from, e.g. 2026-09-05T13:00Z
+    time: UtcDateTime  # UTC hour the value applies from, e.g. 2026-09-05T13:00Z
     temperature: float | None  # display units (see above)
     apparent_temperature: float | None  # "feels-like", display units
     relative_humidity_pct: float | None  # unitless percentage
@@ -34,6 +35,6 @@ class ActivityWeatherView(BaseModel):
     id: UUID  # public uuid (identifier convention)
     lat: float  # the point measured for (the activity's first GPS trackpoint)
     lon: float
-    fetched_at: datetime  # when the upstream fetch happened (UTC)
+    fetched_at: UtcDateTime  # when the upstream fetch happened (UTC)
     units: str  # "metric" | "imperial": the system point temperatures are in
     points: list[WeatherPointView]

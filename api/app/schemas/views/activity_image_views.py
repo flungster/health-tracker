@@ -1,9 +1,10 @@
 """View schemas for activity images."""
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.schemas.views.utc_datetime import UtcDateTime
 
 
 class ActivityImageView(BaseModel):
@@ -17,7 +18,7 @@ class ActivityImageView(BaseModel):
     source: str  # e.g. "uploaded"
     original_filename: str | None
     bytes: int
-    created_at: datetime
+    created_at: UtcDateTime
 
 
 class ActivityImagesView(BaseModel):
