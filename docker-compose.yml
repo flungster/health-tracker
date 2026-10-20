@@ -8,6 +8,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-healthtracker}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-healthtracker}
       POSTGRES_DB: ${POSTGRES_DB:-health_tracker}
+      # Explicit UTC regardless of base-image/host defaults (M30).
+      TZ: "UTC"
     ports:
       # Localhost only, for development tooling (psql, local pytest).
       - "127.0.0.1:5432:5432"
@@ -57,6 +59,8 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:9090}
       STRAVA_REDIRECT_URI: ${STRAVA_REDIRECT_URI:-}
       STRAVA_SCOPE: ${STRAVA_SCOPE:-activity:read_all}
+      # Explicit UTC regardless of base-image/host defaults (M30).
+      TZ: "UTC"
     volumes:
       - uploads:/data/uploads
     ports:
