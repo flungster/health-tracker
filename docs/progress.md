@@ -84,6 +84,9 @@ approval, keep this block current.
 | M29a | Library-wide duplicate scan (I): API core — `POST /activities/duplicate-scan`: retroactive sweep over all of the caller's live primaries (M28 matcher as pairwise rule, transitive clusters via union-find); read-only — never auto-links; db no-op (no new tables) | Done | 2026-10-10 |
 | M29b | Library-wide duplicate scan (II): web — opt-in **Duplicate scan** card on the Activities page: cluster report with a per-group keep-picker, one-click linking of every non-kept member through M28's endpoints (feed + detail invalidation), re-scan | Done | 2026-10-20 |
 | M29c | Library-wide duplicate scan (III): docs + live check — the library-scan half of "Cross-provider duplicate activity detection" marked shipped; completes M29 | Done | 2026-10-20 |
+| M30a | UTC-deterministic serialization (I): api — shared `UtcDateTime` view type; every view datetime normalized to UTC at construction, naive rejected | Done | 2026-10-20 |
+| M30b | UTC-deterministic serialization (II): compose — explicit `TZ=UTC` on api + db containers | Done | 2026-10-20 |
+| M30c | UTC-deterministic serialization (III): docs + log entry — closes the non-UTC-host serialization leak; completes M30 | Done | 2026-10-20 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -92,6 +95,62 @@ approval, keep this block current.
 > brand references, introduced a unit-of-work + dependency-injection +
 > standardized-logging pattern for the API, and completed the dependency
 > license audit (no AGPL / strong copyleft). See the entry below.
+
+## M30 — UTC-deterministic serialization: the API always speaks UTC (2026-10-20)
+
+The JSON contract leaked the *host's* timezone. `timestamptz` values come back
+from psycopg with the process's local offset attached (the wire value is an
+instant; the driver renders it in the process TZ), and pydantic serializes an
+aware datetime with whatever offset it carries. In the containers — UTC by base-
+image default, `TZ` unset — that was invisible: everything read as the UTC
+instant. On this dev box (PDT) the same endpoint rendered `sync_since` as
+`2026-05-31T17:00:00-07:00` instead of `2026-06-01T00:00:00+00:00`, and the two
+sync-floor API tests that assert on the UTC prefix failed.
+
+### Key decisions
+- **Fix at the contract boundary, not per field.** A single shared view type —
+`UtcDateTime` (`app/schemas/views/utc_datetime.py`) — is a pydantic
+`Annotated[datetime, BeforeValidator(to_utc)]`: an aware instant is normalized
+to UTC (same instant, offset `+00:00`) at view construction; pydantic's own
+serializer then renders it in the established ISO-8601 `+00:00` wire format.
+One validator covers every datetime field that uses the type, at one layer
+(the view/contract boundary — no route/service/mapper churn). Stored data is
+never touched.
+- **Naive datetimes are rejected, not guessed.** There is no host-independent way
+to render a naive instant; the app only ever carries aware ones (stored as UTC
+`timestamptz`, parsed or built with an explicit offset), so a naive value
+reaching the view is a bug to surface, not a default TZ to assume. `to_utc`
+raises on it (pydantic turns that into a validation error). This is what makes
+the contract honest rather than accidentally UTC.
+- **Enforce, don't rely on base-image defaults.** The containers were UTC only by
+luck of the stock images. `TZ=UTC` is now explicit on both services, so a
+future base-image swap or `.env` override cannot silently change the wire.
+
+### M30a — api core
+- `app/schemas/views/utc_datetime.py` (new): the documented `to_utc` validator +
+the `UtcDateTime` type. All **14** datetime fields across the five view modules
+(`activity_views`, `provider_views`, `user_views`, `activity_image_views`,
+`activity_weather_views`) are now typed `UtcDateTime` — the full surface, not
+just provider's.
+- **Tests (+6)** in `tests/test_utc_serialization.py`: a fixture sets the process
+TZ to `America/Los_Angeles` (with restore) and pins that an aware-UTC instant
+serializes to the `+00:00` form through the real view path; naive → validation
+error. The existing sync-floor `startswith("2026-06-01T00:00:00")` assertions
+are **kept unweakened** — they pass from this code fix on a non-UTC host, not
+via any test-side `TZ=UTC` pin (explicitly banned: that would mask the bug on
+any host).
+
+### M30b — compose
+- `docker-compose.yml`: explicit `TZ: "UTC"` on **api** and **db**. Nothing else
+touched; live behavior unchanged (both were already UTC by default).
+
+### M30c — docs + gate
+- Logged here. No `api.md`/`usage.md` change needed: the wire *format* is
+unchanged (`+00:00`, as a UTC container always produced) — only the
+*independence from host TZ* is new, which lives in this log.
+
+**Gates (this PDT host, as-is):** `make lint` green; full `make test`
+**393 API / 105 web, 0 failures**.
 
 ## M28 — Duplicate detection & linking: one workout, many sources (2026-09-14)
 
