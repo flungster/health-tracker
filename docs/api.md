@@ -673,6 +673,51 @@ redelivering an activity it already delivered (`(provider, external_activity_id)
 `overwrite`, or keeps both rows. The provider dedup index covers **live** rows
 only, so a deleted-and-re-imported activity inserts fresh instead of colliding.
 
+### Library-wide duplicate scan (M29)
+
+The per-import check above only looks at one new row. This endpoint runs the
+same conservative matcher (M28) **retroactively across the caller's whole
+library**: every set of ≥ 2 live primaries that look like the same workout is
+reported as a group. It is strictly **read-only** — the scan never links,
+unlinks or deletes anything (a human picks one activity to keep per group and
+links the rest with that activity's `POST .../duplicates`), so it is safe to
+run as often as you like; the report only changes when your data does.
+
+| Method & path | What it does |
+|---|---|
+| `POST /activities/duplicate-scan` | Runs the sweep over all of the caller's **live primaries** — linked duplicates are neither candidates nor group members, and someone else's activities never appear. No body. Response `200`: the view below; an empty `groups` list is the normal result for a clean library (no likely duplicates). POST, not GET: it runs the matcher over an entire library rather than a single lookup. |
+
+```json
+{                                // DuplicateScanView
+  "groups": [                    // every cluster of >= 2 likely-same-workout primaries,
+                                 // ordered by the group's earliest start; [] = clean library
+    {
+      "activities": [            // >= 2 ActivitySummaryView rows (the feed's shape),
+                                 // ascending start time — the first is the natural primary to keep;
+        { "id": "...uuid...",    // per-activity metrics in the response's unit system
+          "sport_type": "running", "name": "Morning run (GPX)",
+          "started_at": "2026-09-11T08:15:30Z", "duration_seconds": 1200,
+          "moving_seconds": null, "distance": 5.1, "calories_kcal": null,
+          "elevation_gain": null, "heart_rate_avg_bpm": 149, "provider": null },
+        { "id": "...uuid...",
+          "sport_type": "running", "name": "Morning run (Strava)",
+          "started_at": "2026-09-11T08:17:10Z", "duration_seconds": 1214,
+          "moving_seconds": null, "distance": 5.08, "calories_kcal": null,
+          "elevation_gain": null, "heart_rate_avg_bpm": 152, "provider": "strava" }
+      ]
+    }
+  ],
+  "units": "metric"              // display system all unit-bearing values use (M14b)
+}
+```
+
+Groups are the same conservative heuristic as M28 (same sport, start within 30
+minutes compared as UTC instants, aligned duration or distance), applied pair-
+wise and merged transitively — if A matches B and B matches C, all three land in
+one group. Nothing here is authoritative: confirming a group is exactly the
+existing per-activity link flow (`POST /activities/{id}/duplicates` for each
+non-kept member, idempotent), and unlinking afterwards works as usual.
+
 ## Sports
 
 ### `GET /sports`

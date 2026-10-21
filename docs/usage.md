@@ -78,6 +78,10 @@ connected account also show the provider's name (e.g. **Strava**) — file
 imports carry no badge, so a bare card is one you uploaded yourself. **Load
 more** pulls in older activities.
 
+Above the list sits a **Duplicate scan** card: an opt-in sweep of your whole
+library for the same workout reaching you from more than one source (see
+[Library-wide duplicate scan](#library-wide-duplicate-scan)).
+
 ## Activity detail
 
 Clicking an activity opens its detail page:
@@ -300,6 +304,34 @@ data clean without ever guessing away an activity:
   or keep both. The API also offers an *overwrite* for a confirmed re-import of
   one source's own activity — the new row replaces and soft-deletes the old,
   which stays in storage for rollback.
+
+## Library-wide duplicate scan
+
+The checks above run as things arrive — after an upload, during a sync. For
+what is already in your library (imports and syncs from earlier on, or matches
+you never got prompted about), there is a one-off sweep:
+
+- **Where it lives** — on the **Activities** page, above the feed. Click
+  **Scan library for duplicates**. The scan only reports: nothing is linked,
+  hidden or deleted while it runs (and re-running **Scan again** always gives the
+  same picture until you act on a group). A clean library reads "No duplicate
+  activities found — your library looks clean."
+- **How clusters are presented** — each likely-same-workout cluster is its own
+  block ("These N activities look like the same workout") listing every copy:
+  its name (linking to that activity's detail page), sport and provider badges,
+  start date/time in your display timezone, distance and duration. One radio per
+  copy lets you pick which one to keep — the earliest starts preselected, being
+  the natural primary.
+- **Linking** — pick your keeper and click **Link N as duplicate(s)**: every
+  other copy in that cluster is linked as a duplicate of the kept one, with the
+  same semantics as [Duplicate activities](#duplicate-activities) — hidden from
+  feeds and totals, still stored, still openable by its own link. The card then
+  confirms with "Linked N as duplicates of *name*" and a shortcut to the kept
+  activity. If linking fails, the error is shown per cluster and the (idempotent)
+  action stays available to retry.
+- **Unlinking / changing your mind** — as with any link: on the kept activity's
+  detail page under **Linked duplicates**, each alias offers **Unlink** (it joins
+  your feed again) and **Make this live** (the roles swap).
 
 ## Managing activities
 
