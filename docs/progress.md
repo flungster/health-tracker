@@ -8,16 +8,14 @@ to Done in the overview.
 ## Current status (as of 2026-10-20)
 
 **Last milestone: M29 (library-wide duplicate scan) — Done, all three parts.**
-Commit `78ebc29` (M29a api core); M29b's web work and the M29c docs + live
-check that contains this block are in the working tree, uncommitted (commit per
-part on approval). Gates green at completion: `make lint && make test` =
-**393 API / 105 web**; live stack on :9090 rebuilt (api + web) and verified
-end-to-end.
+`78ebc29` (M29a api core), the M29b web commit and the M29c docs + live
+check. Gates green at completion: `make lint && make test` = **393 API /
+105 web**; live stack on :9090 rebuilt (api + web) and verified end-to-end.
 
-**In the working tree:** M29b (the duplicate-scan card + hooks/types/tests) and
-this milestone's doc updates — ready to commit per part. Also landed ahead of
-its own entry: two commits on UTC-deterministic datetime serialization
-(`95b9c4f` api fix, `7824df8` compose TZ pin).
+Also landed around M29, ahead of its own log entry: two commits on
+UTC-deterministic datetime serialization (`95b9c4f` api fix — shared view
+datetime type, `7824df8` compose TZ pin). M30 will be logged with that
+entry.
 
 **Suggested next milestones** (all already sketched — pick one, no re-research
 needed):
