@@ -17,6 +17,7 @@ import type {
   ClientConfigView,
   ConnectUrlView,
   DuplicateActivitiesView,
+  DuplicateScanView,
   ProfileView,
   ProviderConnectionView,
   ProvidersView,
@@ -297,6 +298,33 @@ export function useOverwriteDuplicate(id: string) {
         json: { duplicate_of },
       }),
     onSuccess: (_data, duplicateOf) => invalidateDuplicateState(queryClient, [id, duplicateOf]),
+  });
+}
+
+/** Retroactive sweep over the caller's whole library for duplicate groups (M29).
+ *  POST because it runs the matcher over an entire library; read-only — nothing is
+ *  ever linked, a human confirms per group. */
+export function useDuplicateScan() {
+  return useMutation({
+    mutationFn: () => apiRequest<DuplicateScanView>("/api/v1/activities/duplicate-scan", { method: "POST" }),
+  });
+}
+
+/** Link every non-kept member of a scan group as a duplicate of `primaryId` (M29),
+ *  reusing M28's per-activity link endpoint. Linking is idempotent, so a failed
+ *  batch can be retried as-is. */
+export function useLinkDuplicateGroup(primaryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberIds: string[]) => {
+      for (const id of memberIds) {
+        await apiRequest<void>(`/api/v1/activities/${id}/duplicates`, {
+          method: "POST",
+          json: { duplicate_of: primaryId },
+        });
+      }
+    },
+    onSuccess: (_data, memberIds) => invalidateDuplicateState(queryClient, [primaryId, ...memberIds]),
   });
 }
 

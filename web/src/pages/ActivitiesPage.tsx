@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { useActivitiesInfinite } from "../api/hooks";
 import type { ActivitySummaryView } from "../api/types";
 import ActivityCard from "../components/ActivityCard";
+import DuplicateScanCard from "../components/DuplicateScanCard";
 import { EmptyState, ErrorNote, Spinner } from "../components/Ui";
 import { dayKey, dayLabel } from "../format";
 import { useTimezone } from "../timezone/context";
@@ -65,6 +66,8 @@ export default function ActivitiesPage() {
           + Upload activity
         </Link>
       </div>
+
+      <DuplicateScanCard />
 
       {groups.length === 0 ? (
         <EmptyState

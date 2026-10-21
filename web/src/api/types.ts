@@ -278,3 +278,19 @@ export type DuplicateActivitiesView = {
   items: ActivitySummaryView[];
   units: Units;
 };
+
+/** One cluster of live primaries the scanner thinks is a single workout (M29).
+ *  Members have at least two entries in ascending start-time order (the first is the
+ *  natural primary to keep). Read-only: nothing here is linked — a human picks one
+ *  and links the rest with `POST .../duplicates` (M28). */
+export type DuplicateGroupView = {
+  activities: ActivitySummaryView[];
+};
+
+/** Result of a library-wide duplicate scan (M29): every set of >= 2 live primaries
+ *  that look like the same workout, ordered by each group's earliest start. An empty
+ *  `groups` list means no likely duplicates — the normal result for a clean library. */
+export type DuplicateScanView = {
+  groups: DuplicateGroupView[]; // ordered by each group's earliest start
+  units: Units; // display system of all unit-bearing values in this response
+};

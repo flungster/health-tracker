@@ -98,9 +98,10 @@ new core needed, since matching lives on plain signals (sport / start instant /
 duration / distance) and the candidates query is provider-agnostic.
 
 Remaining: **GPS-overlap scoring** (strongest signal, heaviest cost — see the
-other entry) and a **library-wide dupe scan** (M28 matches at import time only;
-a retroactive "find duplicates in my history" sweep is a small add: same query,
-loop over the user's primaries).
+other entry). The **library-wide dupe scan** half shipped as M29 (2026-10-20):
+`POST /activities/duplicate-scan` reports clusters across the caller's whole
+library (same matcher, transitive groups), with a scan card on the Activities
+page — report-only; nothing is ever auto-linked.
 
 ## Weather backfill across a user's library (parked 2026-09-13)
 
