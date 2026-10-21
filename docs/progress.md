@@ -5,31 +5,31 @@ end of every milestone** (see the Definition of done in `AGENTS.md`): record
 what landed, the key decisions, and the gate results, then move the milestone
 to Done in the overview.
 
-## Current status (as of 2026-09-14 — project paused, owner at a work offsite)
+## Current status (as of 2026-10-20)
 
-**Last milestone: M28 (duplicate detection & linking) — Done.** Commits
-`7ddd72d` (M28a db+API), `378c382` (M28b web) and the M28c docs commit that
-contains this block. Gates green at completion: `make lint && make test` =
-**367 API / 91 web**; live stack on :9090 rebuilt and verified (migration
-`20260914000001` applied to the live db).
+**Last milestone: M29 (library-wide duplicate scan) — Done, all three parts.**
+Commit `78ebc29` (M29a api core); M29b's web work and the M29c docs + live
+check that contains this block are in the working tree, uncommitted (commit per
+part on approval). Gates green at completion: `make lint && make test` =
+**393 API / 105 web**; live stack on :9090 rebuilt (api + web) and verified
+end-to-end.
 
-**Nothing is mid-flight.** The working tree was clean at pause time; no
-uncommitted or half-finished work exists.
+**In the working tree:** M29b (the duplicate-scan card + hooks/types/tests) and
+this milestone's doc updates — ready to commit per part. Also landed ahead of
+its own entry: two commits on UTC-deterministic datetime serialization
+(`95b9c4f` api fix, `7824df8` compose TZ pin).
 
 **Suggested next milestones** (all already sketched — pick one, no re-research
 needed):
-1. **Library-wide duplicate scan** (M28 follow-up, small: same matcher/query,
-   loop over the user's primaries; retroactive sweep + UI) — see the M28 entry
-   in `docs/future-ideas.md`.
-2. **Weather backfill across a user's library** (parked 2026-09-13, sketched).
-3. **Activity images: Strava photo fetch** (parked 2026-09-08; completes the
+1. **Weather backfill across a user's library** (parked 2026-09-13, sketched).
+2. **Activity images: Strava photo fetch** (parked 2026-09-08; completes the
    provider half of M22's images).
-4. **User location** (parked 2026-08-30; the timezone half shipped in M23).
-5. **GPS-overlap scoring for duplicates** (M28 follow-up, heavier — best done
+3. **User location** (parked 2026-08-30; the timezone half shipped in M23).
+4. **GPS-overlap scoring for duplicates** (M28 follow-up, heavier — best done
    when a second provider ships).
 
 When picking the next one up: work it in `a` (db+API) / `b` (web) / `c`
-(docs + live check on :9090) parts as with M25–M28, commit per part on
+(docs + live check on :9090) parts as with M25–M29, commit per part on
 approval, keep this block current.
 
 ## Overview
@@ -83,6 +83,9 @@ approval, keep this block current.
 | M28a | Duplicate detection & linking (I): db `activities.duplicate_of` self-FK + soft-delete-aware provider dedup index; conservative heuristic matcher (same sport, start ≤ 30 min as UTC instants, duration or distance aligned); candidates / link / unlink / promote-swap / overwrite endpoints; bulk provider sync auto-links and reports `linked_duplicates` | Done | 2026-09-14 |
 | M28b | Duplicate detection & linking (II): web — post-upload confirm card (link to a picked primary or keep separate), Linked-duplicates section on the primary's detail page + alias banner (Make this live / Unlink), sync messages report cross-source links | Done | 2026-09-14 |
 | M28c | Duplicate detection & linking (III): docs + live check — unparks two future ideas ("Import duplicate…overwrite", "Cross-provider duplicate detection"); completes M28 | Done | 2026-09-14 |
+| M29a | Library-wide duplicate scan (I): API core — `POST /activities/duplicate-scan`: retroactive sweep over all of the caller's live primaries (M28 matcher as pairwise rule, transitive clusters via union-find); read-only — never auto-links; db no-op (no new tables) | Done | 2026-10-10 |
+| M29b | Library-wide duplicate scan (II): web — opt-in **Duplicate scan** card on the Activities page: cluster report with a per-group keep-picker, one-click linking of every non-kept member through M28's endpoints (feed + detail invalidation), re-scan | Done | 2026-10-20 |
+| M29c | Library-wide duplicate scan (III): docs + live check — the library-scan half of "Cross-provider duplicate activity detection" marked shipped; completes M29 | Done | 2026-10-20 |
 
 > 2026-08-25 — First release: **v0.2.0** tagged (see `CHANGELOG.md`); the
 > deployed stack reports it at `GET /api/v1/health`.
@@ -181,6 +184,122 @@ mock Strava twin of the sample GPX). **Gates:** `make lint && make test` green
   carries all M28b strings; test rows soft-deleted afterwards.
 
 **Gates:** `make lint && make test` green (**367 API / 91 web**).
+
+## M29 — Library-wide duplicate scan: a retroactive sweep over the whole library (2026-10-20)
+
+M28 catches duplicates as things arrive — a confirm card after each upload,
+auto-links during bulk syncs. M29 adds the retroactive half: a one-off sweep
+over everything already in your library. The same conservative matcher, applied
+pairwise across a user's live primaries and merged transitively (A~B plus B~C
+is one cluster). The sweep is strictly **report-only**: it never links, hides or
+deletes anything — a human picks what to keep per cluster and the existing M28
+endpoints make that choice stick.
+
+### Key decisions
+- **Reuse the matcher as a pairwise rule, don't invent a new one.**
+  `group_duplicates()` is a pure module function beside M28a's
+  `find_duplicates`: same-sport rows walked in start-time order, each anchor
+  compared only against later rows inside the 30-minute window (early break on
+  the ordered run — O(run)), transitive matches merged with a union-find whose
+  smaller index always becomes the root, so every group is deterministically
+  keyed by its earliest member. One comparison per pair; singletons (rows that
+  match nothing) are omitted — they are not duplicates of anything.
+- **The scan pool is exactly what the feed shows.**
+  `ActivityDao.list_live_primaries_for_user` (user-scoped, ordered by sport then
+  start — `list_for_user` without its pagination): soft-deleted rows and linked
+  duplicates are excluded, so a hidden alias never appears — its primary already
+  accounts for it. Someone else's rows can't get in (owner scoping, as always).
+- **POST, not GET.** The route runs the matcher over an entire library rather
+  than a single lookup — `POST /activities/duplicate-scan`, no body. And it is
+  read-only to boot: the report only changes when your data does, so there is
+  nothing for it ever to write.
+- **The UI mirrors WeatherCard's opt-in shape** (M24b): one action, a loading
+  state, then the report. Per cluster you pick which activity to keep (earliest
+  preselected) and link the rest with one click — fanned out to M28's
+  per-activity `POST .../duplicates` (idempotent, so a failed batch retries
+  as-is), then the feed and detail caches are invalidated.
+
+### M29a — API core (commit `78ebc29`)
+- **`group_duplicates()`** (`app/services/duplicate_detection.py`): pure and
+  deterministic like `find_duplicates`. Union-find over row indices; each anchor
+  only looks at later same-sport rows within tolerance, so the result never
+  depends on scan order. Returns index lists — members in ascending start-time
+  order, groups ordered by each group's earliest member.
+- **`ActivityDao.list_live_primaries_for_user`**: the scan pool — live (not
+  deleted, unlinked) primaries only, ordered by sport type then start time.
+- **`DuplicateService.scan_library(user_id) -> (groups, units)`** with a frozen
+  `DuplicateGroup` dataclass; the route builds per-group summary views in the
+  caller's display units (M14b) — `DuplicateScanView` = ordered groups of
+  `ActivitySummaryView`s + the response-level `units`. **No db change**: no new
+  tables or columns — the sweep reads existing `activities` data (checked:
+  nothing needed in `docs/data-model.md`).
+
+**Tests:** +20 API (12 unit pinning the grouping rules — transitive merging,
+singleton omission, deterministic ordering; 8 integration incl. user scoping,
+linked-duplicate exclusion and scan-never-links). **Gates:** `make lint` green;
+**387 API / 91 web**.
+
+### M29b — web (working tree, uncommitted)
+- **`web/src/components/DuplicateScanCard.tsx`** on the Activities page, above
+  the feed (so it is reachable even with an empty library). Before anything runs:
+  one sentence of what the scan does + **Scan library for duplicates**; in
+  flight: "Scanning your library…"; a failed first scan shows the error with
+  **Try again** (a later failure keeps the previous report and only adds an error
+  note). The result view — "Duplicate scan" header +
+  **Scan again**, then the empty state ("No duplicate activities found — your
+  library looks clean.") or one block per cluster. A failed re-scan surfaces the
+  error without wiping a previous report.
+- **Cluster display** ("These N activities look like the same workout"): one row
+  per member — name linking to its detail page, sport + provider badges, start
+  date/time in the display timezone (M23), distance and duration per the scan's
+  `units` — plus a radio per member; the earliest starts preselected as the one
+  to keep.
+- **Linking / unlinking** (M28 semantics, reused): **Link N as duplicate(s)**
+  links every non-kept member to the kept one — `useLinkDuplicateGroup` runs M28's
+  per-activity link in group order, then the shared duplicate-state invalidation
+  (feed + detail caches); on success the block resolves to "Linked N as
+  duplicates of *name*" with a shortcut to the kept activity and no actions left.
+  A link failure reports inline per cluster and keeps the (idempotent) button
+  retryable. Unlinking or changing your mind afterwards is the usual M28b path —
+  **Unlink** / **Make this live** on the detail page.
+- **`api/hooks.ts` + `types.ts`**: `useDuplicateScan()` (POST mutation),
+  `useLinkDuplicateGroup(primaryId)`, and the view types (`DuplicateScanView` /
+  `DuplicateGroupView`) mirroring M29a's schemas.
+
+**Tests:** +14 web (card ×12: opt-in action, loading state, failed-scan retry,
+clean-library empty state, member rendering with provenance + metric and imperial
+units, keep-picker (preselect earliest / choose another), multi-member link order,
+resolved summary, retryable link failure, re-scan from a previous result; feed page
+×2: card present beside an empty feed, clicking triggers the scan hook).
+**Gates:** green (**387 API / 105 web** — no new api tests in this part).
+
+### M29c — docs + live check
+- `docs/api.md`: new *Library-wide duplicate scan* subsection under Activities —
+  the endpoint table (POST, no body; empty `groups` = clean library), the full
+  view shape with an example group (per-activity metrics + the response's unit
+  system), and the explicit never-auto-links note (confirming a group is just M28's
+  per-activity link flow). `docs/usage.md`: new *Library-wide duplicate scan*
+  section — where the card lives, how clusters are presented (member rows +
+  keep-picker), the link flow and unlink/change-of-mind via M28b's detail-page
+  actions — plus a pointer line in *The activity feed*. `docs/data-model.md`: no
+  change needed — M29 adds neither tables nor columns (verified; the sweep reads
+  existing data). `docs/future-ideas.md`: only the library-wide-scan item in
+  "Cross-provider duplicate activity detection"'s remaining list is marked shipped
+  (M29); GPS-overlap scoring stays open, and nothing else in the file was touched.
+- **Live (:9090)**: rebuilt api + web (the deployed api predated M29a —
+  `POST …/duplicate-scan` answered 405 until the rebuild; no migration to apply —
+  db unchanged). Served bundle carries "Scan library for duplicates", "Scanning
+  your library…", the cluster heading, empty state and **Scan again** (the Link-N
+  label is a dynamic template — present as `as duplicate${…}`). Smoke account: the
+  sample GPX imported twice (Δt = 0) → scan returned one group with both rows in
+  start-time order + `units: "metric"`; linked the second to the first (204) →
+  feed 2→1, `duplicate_of` set on its detail, and a **re-scan reported zero groups**
+  (linked duplicates are outside the pool); unlink (204) → both live again. Smoke
+  rows soft-deleted afterwards; final scan clean (0 groups).
+
+**Gates:** `make lint && make test` green (**393 API / 105 web** — the M29 set is
++20 api and +14 web; the extra 6 api tests come from `95b9c4f`, which lands in its
+own milestone entry).
 
 ## M27 — Header: the user's name is the Profile entry point (2026-09-14)
 

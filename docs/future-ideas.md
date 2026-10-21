@@ -4,6 +4,86 @@ Ideas parked here are not scheduled. Each entry records when it was parked,
 why it is interesting, and — where known — a feasibility sketch, so the idea
 can be picked up later without re-research.
 
+## Research batch — 2026-10-10 (ideas, not commitments)
+
+A research pass over the self-hosted fitness landscape and this repo's
+stored data, asked for *additional* product ideas. The entries below are
+**ideas only**: nothing here is scheduled, scoped for a milestone, or
+committed to. Some will be parked individually (with the usual
+when-parked / why / feasibility sketch) when one earns it; most may stay
+brainstorm forever. They are grouped by how they relate to what already
+exists, and each notes the existing code it would build on.
+
+### Compute harder on data already stored (fully offline, no new sources)
+
+- **Training load / fitness–fatigue–form (PMC)** — daily CTL/ATL/TSB curves
+  over a range, the "Performance Management Chart" every endurance app has.
+  Derive per-activity load (TSS from power, or TRIMP-style HR+duration) out
+  of `activity_trackpoints` + activity columns, sum per calendar day (the
+  dashboard already groups by day), run a recursive EWMA (τ=42/7). Pure and
+  offline, view-time — mirrors the zone-snapshot pattern (one live row per
+  activity or a daily-load table). A companion idea: **cardio/effort
+  decoupling** within long efforts (does pace/power climb while HR climbs?)
+  from the same streams. The marquee Tier-1 candidate: high perceived value,
+  no new data needed.
+- **Best efforts / personal records** — auto-detect PRs: fastest 5k/10K/half
+  from the precomputed `activity_splits` (any x-km window), max power / n-min
+  effort from trackpoints, longest distance/duration. A "PRs" card plus a
+  badge on the feed when an import sets one. PR detection is a scan at
+  import or view time; cheap and sticky.
+- **Route & climb analysis** — climb detection (longest climb, average/peak
+  gradient), punchiness score, per-route elevation profile and comparison of
+  repeated routes. Pure derived metrics over `trackpoints.altitude_m`; same
+  shape as the splits/zone modules.
+
+### New local data sources (expands what "the platform" holds)
+
+- **Apple Health import (`export.zip`)** — already a stated stretch goal in
+  `AGENTS.md`, and the biggest strategic unlock here: it is a purely local,
+  offline gateway (the user exports from their phone; no cloud provider) to
+  **non-activity wellness data** — sleep, resting HR, body weight — in the
+  same store. Without some wellness source (this or manual/CSV entry), the
+  readiness idea below has nothing to read.
+- **Finish manual strength entry** — `strength_exercise_sets` exists in the
+  schema but (per the data model doc) nothing populates it yet. An exercise
+  library + set/rep/rest form would complete a sport that is currently
+  import-only, and feeds volume goals.
+
+### Platform & integration layer (matches the "platform" framing)
+
+- **Local AI coach / MCP server** — expose this local data through an MCP
+  endpoint so a locally-run LLM (the owner already runs LM Studio) can answer
+  questions over the user's own history, plus a generated daily/weekly review.
+  This is becoming table stakes in the self-hosted competitor set and fits the
+  privacy-first thesis: no data ever leaves the box. Decide scope (read-only
+  recall vs write actions) before anything else; note Strava's API terms keep
+  provider-sourced data out of AI context by default in comparable projects.
+- **A second provider (Garmin Connect or intervals.icu)** — the parked
+  GPS-overlap and cross-provider dedup entries both say they only get good
+  once a second adapter ships; adding one unlocks that already-built,
+  provider-agnostic dedup path and (via intervals.icu) a wellness feed as well.
+  Heavier than the ideas above because it means real OAuth + sync work, not
+  just local computation.
+- **Recovery / readiness dashboard** — a daily "ready vs loaded" score from the
+  user's own baselines (resting HR, sleep) combined with Tier-1 training load.
+  **Depends on a wellness source** (Apple Health import or manual/CSV entry) —
+  parked here as the consumer side of that dependency.
+- **Goals & targets** — weekly/monthly distance/volume/calorie/zone-time goals
+  that auto-update as activities land; progress per period plus historical
+  attainment. A natural extension of the existing dashboard period-stats API.
+
+### Cheap wins (small, quick visual value)
+
+- **Calendar heatmap / streaks** — a contribution-style grid of activity
+  counts/intensity by day, plus per-sport streaks; the dashboard already does
+  the day grouping. Mostly a render feature.
+- **Export / portability** — one-click CSV/JSON (and GPX re-export where
+  trackpoints exist) of the user's activities, splits and PRs. Purely on-thesis
+  ("the data is yours") given the views layer already exists.
+- **Library health report** — a "what's missing" view: activities without GPS,
+  HR or weather snapshots. Doubles as the entry point for the already-parked
+  weather-backfill idea and any future backfills.
+
 ## ~~Import duplicate detection with user-confirmed overwrite~~ — shipped as M28 (2026-09-14)
 
 Shipped with a twist the sketch had anticipated: instead of silently
@@ -41,6 +121,36 @@ flash); `ThemeProvider` mirrors the units/timezone contexts and resolves
 dark basemap. Light / dark / system are all in v1; see `docs/progress.md`
 (M25a–M25b) and the *Theme* section in `docs/usage.md`. Remaining: accent-color
 theming — later, if ever.
+
+## Automatic provider sync (scheduled background pulls) — parked 2026-10-10
+
+Today, provider sync is strictly on-demand: the user taps "Sync" and
+`POST /api/v1/providers/{provider}/sync` runs a walk. The idea: a background
+worker (or job) that, **every X hours — configurable**, walks each user's
+connected providers and imports whatever is new, so a connected account fills
+itself in without the user ever touching it.
+
+- **Everything is already there except a trigger.** M10d's sync walk (paged,
+  cursor-resumable, token-refreshing), M11e's import-from floor + per-run
+  `since` rescan, and M28a's auto-link on sync import all exist; a scheduled
+  run is `ProviderSyncService.sync(user_uuid, provider)` with no body. The
+  work is scheduling + surfacing, not new sync logic.
+- **Shape:** a scheduler loop in the API process (e.g. APScheduler started at
+  app startup — no new service, keeps the compose file untouched) that fires a
+  sync per connected `provider_accounts` row. Interval is config: global env
+  (`SYNC_INTERVAL_HOURS`, default e.g. 6, `0`/unset = off) with an optional
+  per-user override on the profile later. Stagger runs (a few-second jitter)
+  so a fleet of users doesn't hit Strava in lockstep.
+- **Opt-in, per the provider rules.** Strictly local-first: nothing happens
+  unless a user has connected an account, and the interval is configurable (and
+  disable-able). The existing per-provider token refresh already keeps silent,
+  background calls healthy.
+- **Concurrency guard:** one in-flight sync per (user, provider) — skip the
+  tick if a manual or previous scheduled run is still walking; track last-run +
+  outcome so the UI can show "last synced Xh ago / N new".
+- **Open question:** in-process loop vs. a separate worker container (the latter
+  isolates long walks from the web process but adds a compose service + shared-DB
+  coordination). Decide at scheduling time; the in-process loop is the smaller step.
 
 ## Activity images: Strava photo fetch (parked 2026-09-08)
 
